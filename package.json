@@ -1,0 +1,23 @@
+{
+  "name": "rps10-spacetime",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "npm --prefix spacetimedb test",
+    "generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "publish:cloud": "spacetime publish rps-10-b7hi9 --module-path spacetimedb --server maincloud",
+    "publish:local": "spacetime publish rps10 --module-path spacetimedb --server local"
+  },
+  "dependencies": {
+    "firebase": "^13.3.0",
+    "spacetimedb": "^2.15.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2",
+    "vite": "^7.1.5"
+  }
+}

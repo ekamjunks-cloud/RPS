@@ -1,0 +1,5 @@
+{
+  "name": "RPS 10",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "postCreateCommand": "npm install && npm --prefix spacetimedb install"
+}
