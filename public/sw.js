@@ -1,7 +1,8 @@
 // RPS 10 service worker: makes the game installable and quick to open.
 // Pages are fetched fresh when online (so new versions show up right away) and come from the cache offline.
+// "no-cache" makes the browser check with the server every time instead of reusing GitHub Pages' 10-minute copy.
 // Built files have unique names per version, so they are cached for good. The game server is never cached.
-const CACHE = 'rps10-v1';
+const CACHE = 'rps10-v2';
 const CORE = ['./', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon.svg'];
 
 self.addEventListener('install', e => {
@@ -26,7 +27,7 @@ self.addEventListener('fetch', e => {
     return; // the game server and sign-in always go straight to the network
   }
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req)
+    e.respondWith(fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then(res => { save('./', res.clone()); return res; })
       .catch(() => caches.match('./')));
     return;
