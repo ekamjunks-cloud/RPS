@@ -10,6 +10,56 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Achievement = __t.object("Achievement", {
+  id: __t.u64(),
+  identity: __t.identity(),
+  key: __t.string(),
+  at: __t.timestamp(),
+});
+export type Achievement = __Infer<typeof Achievement>;
+
+export const AchievementView = __t.object("AchievementView", {
+  key: __t.string(),
+  at: __t.timestamp(),
+});
+export type AchievementView = __Infer<typeof AchievementView>;
+
+export const ChatMsg = __t.object("ChatMsg", {
+  id: __t.u64(),
+  gameId: __t.u64(),
+  seat: __t.u8(),
+  kind: __t.string(),
+  body: __t.string(),
+  at: __t.timestamp(),
+});
+export type ChatMsg = __Infer<typeof ChatMsg>;
+
+export const ChatView = __t.object("ChatView", {
+  id: __t.u64(),
+  mine: __t.bool(),
+  kind: __t.string(),
+  body: __t.string(),
+});
+export type ChatView = __Infer<typeof ChatView>;
+
+export const DailyStat = __t.object("DailyStat", {
+  day: __t.u32(),
+  plays: __t.u32(),
+  wins: __t.u32(),
+  board: __t.u8(),
+});
+export type DailyStat = __Infer<typeof DailyStat>;
+
+export const DailyStats = __t.object("DailyStats", {});
+export type DailyStats = __Infer<typeof DailyStats>;
+
+export const DailyView = __t.object("DailyView", {
+  day: __t.u32(),
+  plays: __t.u32(),
+  wins: __t.u32(),
+});
+export type DailyView = __Infer<typeof DailyView>;
+
 export const Game = __t.object("Game", {
   id: __t.u64(),
   mode: __t.string(),
@@ -41,6 +91,10 @@ export const Game = __t.object("Game", {
   conn1: __t.bool(),
   dc0: __t.timestamp(),
   dc1: __t.timestamp(),
+  lock0: __t.bool(),
+  lock1: __t.bool(),
+  rematch0: __t.bool(),
+  rematch1: __t.bool(),
 });
 export type Game = __Infer<typeof Game>;
 
@@ -62,12 +116,13 @@ export const GameView = __t.object("GameView", {
   deadline: __t.timestamp(),
   phaseMs: __t.u32(),
   round: __t.u32(),
-  winPoints: __t.u32(),
+  totalRounds: __t.u32(),
   pickMs: __t.u32(),
   youName: __t.string(),
   youScore: __t.u32(),
   youReady: __t.bool(),
   youSel: __t.u64(),
+  youLocked: __t.bool(),
   oppName: __t.string(),
   oppIsBot: __t.bool(),
   oppScore: __t.u32(),
@@ -83,6 +138,10 @@ export const GameView = __t.object("GameView", {
   endResult: __t.string(),
   endReason: __t.string(),
   ratingChange: __t.i32(),
+  youRematch: __t.bool(),
+  oppRematch: __t.bool(),
+  oppLeft: __t.bool(),
+  oppRating: __t.i32(),
 });
 export type GameView = __Infer<typeof GameView>;
 
@@ -101,6 +160,39 @@ export const HandCardView = __t.object("HandCardView", {
   pos: __t.u32(),
 });
 export type HandCardView = __Infer<typeof HandCardView>;
+
+export const History = __t.object("History", {
+  id: __t.u64(),
+  identity: __t.identity(),
+  at: __t.timestamp(),
+  mode: __t.string(),
+  opp: __t.string(),
+  oppBot: __t.bool(),
+  result: __t.string(),
+  reason: __t.string(),
+  you: __t.u32(),
+  them: __t.u32(),
+  ratingChange: __t.i32(),
+  cards: __t.string(),
+  outcomes: __t.string(),
+});
+export type History = __Infer<typeof History>;
+
+export const HistoryView = __t.object("HistoryView", {
+  id: __t.u64(),
+  at: __t.timestamp(),
+  mode: __t.string(),
+  opp: __t.string(),
+  oppBot: __t.bool(),
+  result: __t.string(),
+  reason: __t.string(),
+  you: __t.u32(),
+  them: __t.u32(),
+  ratingChange: __t.i32(),
+  cards: __t.string(),
+  outcomes: __t.string(),
+});
+export type HistoryView = __Infer<typeof HistoryView>;
 
 export const Ladder = __t.object("Ladder", {
   identity: __t.identity(),
@@ -152,17 +244,29 @@ export const Me = __t.object("Me", {
 });
 export type Me = __Infer<typeof Me>;
 
+export const MyAchievements = __t.object("MyAchievements", {});
+export type MyAchievements = __Infer<typeof MyAchievements>;
+
+export const MyChat = __t.object("MyChat", {});
+export type MyChat = __Infer<typeof MyChat>;
+
 export const MyGame = __t.object("MyGame", {});
 export type MyGame = __Infer<typeof MyGame>;
 
 export const MyHand = __t.object("MyHand", {});
 export type MyHand = __Infer<typeof MyHand>;
 
+export const MyHistory = __t.object("MyHistory", {});
+export type MyHistory = __Infer<typeof MyHistory>;
+
 export const MyLog = __t.object("MyLog", {});
 export type MyLog = __Infer<typeof MyLog>;
 
 export const MyPlayer = __t.object("MyPlayer", {});
 export type MyPlayer = __Infer<typeof MyPlayer>;
+
+export const MyStats = __t.object("MyStats", {});
+export type MyStats = __Infer<typeof MyStats>;
 
 export const MyTransfer = __t.object("MyTransfer", {});
 export type MyTransfer = __Infer<typeof MyTransfer>;
@@ -238,6 +342,73 @@ export const RoundView = __t.object("RoundView", {
   result: __t.string(),
 });
 export type RoundView = __Infer<typeof RoundView>;
+
+export const Season = __t.object("Season", {
+  id: __t.u8(),
+  key: __t.u32(),
+  champ: __t.string(),
+  champRating: __t.i32(),
+});
+export type Season = __Infer<typeof Season>;
+
+export const SeasonInfo = __t.object("SeasonInfo", {});
+export type SeasonInfo = __Infer<typeof SeasonInfo>;
+
+export const SeasonView = __t.object("SeasonView", {
+  key: __t.u32(),
+  champ: __t.string(),
+  champRating: __t.i32(),
+});
+export type SeasonView = __Infer<typeof SeasonView>;
+
+export const Stats = __t.object("Stats", {
+  identity: __t.identity(),
+  plays0: __t.u32(),
+  plays1: __t.u32(),
+  plays2: __t.u32(),
+  wins0: __t.u32(),
+  wins1: __t.u32(),
+  wins2: __t.u32(),
+  opens0: __t.u32(),
+  opens1: __t.u32(),
+  opens2: __t.u32(),
+  streak: __t.u32(),
+  bestStreak: __t.u32(),
+  perfects: __t.u32(),
+  dailyLast: __t.u32(),
+  dailyStreak: __t.u32(),
+  dailyBest: __t.u32(),
+  dailyWins: __t.u32(),
+  dailyResult: __t.string(),
+  dailyYou: __t.u32(),
+  dailyThem: __t.u32(),
+  lastSeason: __t.i32(),
+});
+export type Stats = __Infer<typeof Stats>;
+
+export const StatsView = __t.object("StatsView", {
+  plays0: __t.u32(),
+  plays1: __t.u32(),
+  plays2: __t.u32(),
+  wins0: __t.u32(),
+  wins1: __t.u32(),
+  wins2: __t.u32(),
+  opens0: __t.u32(),
+  opens1: __t.u32(),
+  opens2: __t.u32(),
+  streak: __t.u32(),
+  bestStreak: __t.u32(),
+  perfects: __t.u32(),
+  dailyLast: __t.u32(),
+  dailyStreak: __t.u32(),
+  dailyBest: __t.u32(),
+  dailyWins: __t.u32(),
+  dailyResult: __t.string(),
+  dailyYou: __t.u32(),
+  dailyThem: __t.u32(),
+  lastSeason: __t.i32(),
+});
+export type StatsView = __Infer<typeof StatsView>;
 
 export const SweepTimer = __t.object("SweepTimer", {
   scheduledId: __t.u64(),

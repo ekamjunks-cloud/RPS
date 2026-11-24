@@ -16,10 +16,14 @@ import JoinQueueReducer from "../join_queue_reducer";
 import JoinRoomReducer from "../join_room_reducer";
 import LeaveGameReducer from "../leave_game_reducer";
 import LeaveQueueReducer from "../leave_queue_reducer";
+import LockInReducer from "../lock_in_reducer";
 import PrepareTransferReducer from "../prepare_transfer_reducer";
 import ReadyReducer from "../ready_reducer";
+import RematchReducer from "../rematch_reducer";
 import ReorderHandReducer from "../reorder_hand_reducer";
 import SelectCardReducer from "../select_card_reducer";
+import SendChatReducer from "../send_chat_reducer";
+import StartDailyReducer from "../start_daily_reducer";
 import StartPracticeReducer from "../start_practice_reducer";
 
 export type ClaimNameParams = __Infer<typeof ClaimNameReducer>;
@@ -32,9 +36,13 @@ export type JoinQueueParams = __Infer<typeof JoinQueueReducer>;
 export type JoinRoomParams = __Infer<typeof JoinRoomReducer>;
 export type LeaveGameParams = __Infer<typeof LeaveGameReducer>;
 export type LeaveQueueParams = __Infer<typeof LeaveQueueReducer>;
+export type LockInParams = __Infer<typeof LockInReducer>;
 export type PrepareTransferParams = __Infer<typeof PrepareTransferReducer>;
 export type ReadyParams = __Infer<typeof ReadyReducer>;
+export type RematchParams = __Infer<typeof RematchReducer>;
 export type ReorderHandParams = __Infer<typeof ReorderHandReducer>;
 export type SelectCardParams = __Infer<typeof SelectCardReducer>;
+export type SendChatParams = __Infer<typeof SendChatReducer>;
+export type StartDailyParams = __Infer<typeof StartDailyReducer>;
 export type StartPracticeParams = __Infer<typeof StartPracticeReducer>;
 

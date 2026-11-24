@@ -5,6 +5,7 @@ import { createModuleTestHarness, TestAuth, TestClock } from 'spacetimedb/server
 import spacetimedb, * as mod from './index';
 import { config } from './config';
 
+config.firebaseProjectId = ''; // the Google checks set their own project below
 config.requireAccount = true; // most checks cover the accounts-on rules; the guest-only mode has its own check below
 let nextConn = 1n;
 function setup() {
@@ -59,7 +60,7 @@ function setup() {
         const g = p.game();
         if (!g || g.over) continue;
         if (g.phase === 'prep' && !g.youReady) p.call(mod.ready);
-        if (g.phase === 'pick' && g.youSel === 0n && p.hand().length) p.call(mod.selectCard, { cardId: p.hand()[0].id });
+        if (g.phase === 'pick' && g.youSel === 0n && p.hand().length) { p.call(mod.selectCard, { cardId: p.hand()[0].id }); p.call(mod.lockIn); }
       }
       onState?.();
       if (!fireNext()) throw new Error('game stalled: no timers pending');
@@ -184,7 +185,7 @@ describe('a match', () => {
     for (const c of a.hand()) counts[c.kind]++;
     expect(a.hand()).toHaveLength(10);
     expect(counts.sort()).toEqual([3, 3, 4]);
-    expect(a.game()).toMatchObject({ phase: 'prep', oppHandCount: 10, oppIsBot: true, rated: false, winPoints: 7 });
+    expect(a.game()).toMatchObject({ phase: 'prep', oppHandCount: 10, oppIsBot: true, rated: false, totalRounds: 10 });
     playOut([a]);
     const g = a.game();
     expect(g.over).toBe(true);
@@ -198,8 +199,18 @@ describe('a match', () => {
       if (r.result === 'win') you++; if (r.result === 'loss') opp++;
     }
     expect([g.youScore, g.oppScore]).toEqual([you, opp]);
-    expect(g.youScore === 7 || g.oppScore === 7 || a.log().length === 10).toBe(true);
+    expect(a.log()).toHaveLength(10); // always all 10 rounds
     expect(g.endResult).toBe(you > opp ? 'win' : opp > you ? 'loss' : 'draw');
+  });
+
+  it('plays all 10 rounds even when one player is far ahead', () => {
+    const { client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    playOut([a]); // b never plays a card, so a wins every round
+    expect(a.log()).toHaveLength(10);
+    expect(a.game()).toMatchObject({ over: true, youScore: 10, oppScore: 0, endResult: 'win', endReason: 'points' });
   });
 
   it('never shows a player the opponent\'s pick before both cards are revealed', () => {
@@ -219,7 +230,7 @@ describe('a match', () => {
         }
       }
     });
-    expect(sawPick).toBe(true); // they do see *that* the opponent has placed a card
+    void sawPick; // seeing *that* the opponent has locked in is covered by the lock-in checks
     expect(a.game().rated).toBe(false);
     expect(a.game().endResult === 'draw' ? b.game().endResult === 'draw' : a.game().endResult !== b.game().endResult).toBe(true);
   });
@@ -238,7 +249,53 @@ describe('a match', () => {
     expect(a.game().youSel).toBe(0n);
     a.call(mod.selectCard, { cardId: aCard });
     expect(a.game().youSel).toBe(aCard);
+    expect(b.game().oppPlaced).toBe(false); // a pick is private until locked in
+    a.call(mod.lockIn);
+    expect(a.game().youLocked).toBe(true);
     expect(b.game().oppPlaced).toBe(true);
+    a.call(mod.selectCard, { cardId: a.hand()[1].id }); // locked: can't change
+    expect(a.game().youSel).toBe(aCard);
+  });
+
+  it('reveals as soon as both players lock in, without waiting for the timer', () => {
+    const { test, client, fireNext } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    a.call(mod.ready); b.call(mod.ready);
+    while (a.game().phase !== 'pick') fireNext();
+    const started = test.clock.now();
+    a.call(mod.selectCard, { cardId: a.hand()[0].id }); a.call(mod.lockIn);
+    expect(a.game().phase).toBe('pick');
+    b.call(mod.selectCard, { cardId: b.hand()[0].id }); b.call(mod.lockIn);
+    expect(a.game().phase).toBe('reveal');
+    expect(test.clock.now().since(started).millis).toBe(0);
+    expect(a.game().revealYou).toBeGreaterThanOrEqual(0);
+    expect(a.game().revealOpp).toBeGreaterThanOrEqual(0);
+  });
+
+  it('counts a picked card that was not locked in time as too slow', () => {
+    const { client, fireNext } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    a.call(mod.ready); b.call(mod.ready);
+    while (a.game().phase !== 'pick') fireNext();
+    a.call(mod.selectCard, { cardId: a.hand()[0].id });                       // picked, never locked
+    b.call(mod.selectCard, { cardId: b.hand()[0].id }); b.call(mod.lockIn);
+    while (a.game().phase !== 'result') fireNext();
+    expect(a.game()).toMatchObject({ revealYou: -1, revealResult: 'loss' });
+    expect(a.hand()).toHaveLength(10);
+  });
+
+  it('lets the bot lock in, and reveals right away once the player locks in too', () => {
+    const { client, fireNext } = setup();
+    const a = client('a');
+    a.call(mod.startPractice); a.call(mod.ready);
+    while (a.game().phase !== 'pick') fireNext();
+    while (!a.game().oppPlaced) fireNext();
+    a.call(mod.selectCard, { cardId: a.hand()[0].id }); a.call(mod.lockIn);
+    expect(a.game().phase).toBe('reveal');
   });
 
   it('gives the round to the player who picked when the other is too slow', () => {
@@ -248,7 +305,7 @@ describe('a match', () => {
     b.call(mod.joinRoom, { code: a.me().roomCode });
     a.call(mod.ready); b.call(mod.ready);
     while (a.game().phase !== 'pick') fireNext();
-    a.call(mod.selectCard, { cardId: a.hand()[0].id });
+    a.call(mod.selectCard, { cardId: a.hand()[0].id }); a.call(mod.lockIn);
     while (a.game().phase !== 'result') fireNext();
     expect(a.game()).toMatchObject({ revealResult: 'win', revealOpp: -1, youScore: 1 });
     expect(b.game()).toMatchObject({ revealResult: 'loss', revealYou: -1 });
@@ -402,5 +459,258 @@ describe('rooms, disconnects and cleanup', () => {
     expect(test.db.roundLog.count()).toBe(0n);
     expect(test.db.gameTimer.count()).toBe(0n);
     expect(test.db.matchResult.count()).toBe(1n); // history is kept
+  });
+});
+
+describe('rematch', () => {
+  const finishedRoom = () => {
+    const s = setup();
+    const a = s.client('a'), b = s.client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    s.playOut([a, b]);
+    return { ...s, a, b };
+  };
+
+  it('starts a new room match once both players ask, with seats swapped', () => {
+    const { a, b } = finishedRoom();
+    const old = a.game().gameId;
+    a.call(mod.rematch);
+    expect(a.game()).toMatchObject({ gameId: old, over: true, youRematch: true, oppRematch: false, oppLeft: false });
+    expect(b.game()).toMatchObject({ youRematch: false, oppRematch: true });
+    b.call(mod.rematch);
+    const g = a.game();
+    expect(g.gameId).not.toBe(old);
+    expect(g).toMatchObject({ mode: 'room', over: false, phase: 'prep', round: 1, youScore: 0, oppScore: 0, youRematch: false, oppRematch: false });
+    expect(b.game().gameId).toBe(g.gameId);
+    expect(a.hand()).toHaveLength(10);
+    expect(b.hand()).toHaveLength(10);
+  });
+
+  it('refuses a rematch once the opponent has left the end screen or disconnected', () => {
+    const { a, b } = finishedRoom();
+    a.call(mod.rematch);
+    b.call(mod.leaveGame);
+    expect(a.game().oppLeft).toBe(true);
+    expect(() => a.call(mod.rematch)).toThrow('opponent has left');
+    expect(() => b.call(mod.rematch)).toThrow('no longer available');
+
+    const s2 = finishedRoom();
+    s2.test.withReducerTx(s2.b.auth, ctx => (mod.onDisconnect as any)(ctx, {}));
+    expect(s2.a.game().oppLeft).toBe(true);
+    expect(() => s2.a.call(mod.rematch)).toThrow('opponent has left');
+  });
+
+  it('keeps a ranked rematch rated', () => {
+    const s = setup();
+    const a = s.client('a'), b = s.client('b');
+    a.call(mod.claimName, { name: 'alice' }); b.call(mod.claimName, { name: 'bob' });
+    a.qualify(); b.qualify();
+    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    s.playOut([a, b]);
+    a.call(mod.rematch); b.call(mod.rematch);
+    expect(a.game()).toMatchObject({ mode: 'ranked', rated: true, over: false });
+  });
+
+  it('starts a bot rematch straight away, against the same bot', () => {
+    const { client, playOut } = setup();
+    const a = client('a');
+    a.call(mod.startPractice);
+    playOut([a]);
+    const bot = a.game().oppName;
+    a.call(mod.rematch);
+    expect(a.game()).toMatchObject({ mode: 'practice', over: false, phase: 'prep', oppName: bot, oppIsBot: true });
+  });
+});
+
+describe('chat', () => {
+  const room = () => {
+    const s = setup();
+    const a = s.client('a'), b = s.client('b'), c = s.client('c');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    const chat = (p: any) => ((mod.myChat as any)(s.test.viewContext(p.auth)) as any[]).sort((x, y) => (x.id < y.id ? -1 : 1));
+    return { ...s, a, b, c, chat };
+  };
+
+  it('delivers emoji and phrases to both players, and only to them', () => {
+    const { a, b, c, chat } = room();
+    a.call(mod.sendChat, { kind: 'phrase', body: 'Gift for you 🎁' });
+    b.call(mod.sendChat, { kind: 'emoji', body: '✂️' });
+    expect(chat(a).map(m => [m.mine, m.kind, m.body])).toEqual([[true, 'phrase', 'Gift for you 🎁'], [false, 'emoji', '✂️']]);
+    expect(chat(b).map(m => [m.mine, m.body])).toEqual([[false, 'Gift for you 🎁'], [true, '✂️']]);
+    expect(chat(c)).toEqual([]);
+    expect(() => c.call(mod.sendChat, { kind: 'emoji', body: '👍' })).toThrow('not in a match');
+  });
+
+  it('refuses anything typed, and anything not on the lists', () => {
+    const { a, chat } = room();
+    expect(() => a.call(mod.sendChat, { kind: 'text', body: 'hello' })).toThrow('Unknown message type');
+    expect(() => a.call(mod.sendChat, { kind: 'phrase', body: 'you are bad' })).toThrow('Pick one of the phrases');
+    expect(() => a.call(mod.sendChat, { kind: 'phrase', body: 'good luck!' })).toThrow('Pick one of the phrases');
+    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: '💩' })).toThrow('Unknown emoji');
+    expect(chat(a)).toEqual([]);
+    for (const e of ['🪨', '📄', '✂️', '🎁']) a.call(mod.sendChat, { kind: 'emoji', body: e });
+    expect(chat(a).map(m => m.body)).toEqual(['🪨', '📄', '✂️', '🎁']);
+  });
+
+  it('slows down a player who sends too fast', () => {
+    const { a, b, test } = room();
+    for (let i = 0; i < 4; i++) a.call(mod.sendChat, { kind: 'emoji', body: '🔥' });
+    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: '🔥' })).toThrow('Slow down');
+    b.call(mod.sendChat, { kind: 'emoji', body: '👍' }); // the other player isn't affected
+    test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + 5_000_000n));
+    a.call(mod.sendChat, { kind: 'phrase', body: 'I promise 🤞' });
+  });
+
+  it('keeps chat on the end screen, and removes it with the game', () => {
+    const { a, b, chat, playOut, fireNext, test } = room();
+    playOut([a, b]);
+    b.call(mod.sendChat, { kind: 'phrase', body: 'gg' });
+    expect(chat(a)[chat(a).length - 1]).toMatchObject({ mine: false, body: 'gg' });
+    while (fireNext(false)) { /* run the cleanup timer */ }
+    expect(test.db.chatMsg.count()).toBe(0n);
+  });
+
+  it('works against a bot, which sometimes reacts', () => {
+    const { client, playOut, test } = setup();
+    const a = client('a');
+    a.call(mod.startPractice);
+    a.call(mod.sendChat, { kind: 'phrase', body: 'Rock is coming 🪨' });
+    playOut([a]);
+    const msgs = (mod.myChat as any)(test.viewContext(a.auth)) as any[];
+    expect(msgs.some(m => !m.mine)).toBe(true); // the bot said something over a whole match
+  });
+});
+
+describe('stats, history and achievements', () => {
+  const view = (test: any, c: any, v: any) => (v as any)(test.viewContext(c.auth)) as any[];
+
+  it('records each match in the history and the per-card stats', () => {
+    const { test, client } = setup();
+    const a = client('a');
+    a.qualify();
+    const [h] = view(test, a, mod.myHistory);
+    expect(h).toMatchObject({ mode: 'practice', oppBot: true, reason: 'points' });
+    expect(h.cards).toMatch(/^[rps]{10}$/);
+    expect(h.outcomes).toMatch(/^[wld]{10}$/);
+    const s = view(test, a, mod.myStats)[0];
+    expect(s.plays0 + s.plays1 + s.plays2).toBe(10);
+    expect(s.opens0 + s.opens1 + s.opens2).toBe(1);
+    expect(s.wins0 + s.wins1 + s.wins2).toBe([...h.outcomes].filter((o: string) => o === 'w').length);
+    const keys = view(test, a, mod.myAchievements).map(x => x.key);
+    expect(keys.includes('first_win')).toBe(h.result === 'win');
+    expect(view(test, client('b'), mod.myHistory)).toEqual([]); // private to each player
+  });
+
+  it('keeps only the last 20 matches and tracks win streaks', () => {
+    const { test, client } = setup();
+    const a = client('a');
+    for (let i = 0; i < 22; i++) { a.call(mod.startPractice); a.call(mod.forfeit); }
+    const hist = view(test, a, mod.myHistory);
+    expect(hist).toHaveLength(20);
+    expect(hist.every(h => h.result === 'loss' && h.reason === 'forfeit')).toBe(true);
+    expect(view(test, a, mod.myStats)[0]).toMatchObject({ streak: 0, bestStreak: 0 });
+  });
+
+  it('gives friend-room and rematch achievements to both players', () => {
+    const s = setup();
+    const a = s.client('a'), b = s.client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    s.playOut([a, b]);
+    for (const c of [a, b]) expect(view(s.test, c, mod.myAchievements).map(x => x.key)).toContain('friend');
+    a.call(mod.rematch); b.call(mod.rematch);
+    for (const c of [a, b]) expect(view(s.test, c, mod.myAchievements).map(x => x.key)).toContain('rematch');
+  });
+
+  it('moves stats, history and achievements to the new Google account', () => {
+    config.firebaseProjectId = 'demo-project';
+    try {
+      const { test, client } = setup();
+      const guest = client('g');
+      guest.qualify();
+      const hist = view(test, guest, mod.myHistory);
+      guest.call(mod.prepareTransfer);
+      const code = (mod.myTransfer as any)(test.viewContext(guest.auth))[0].code;
+      const user = client('u', true);
+      user.call(mod.claimTransfer, { code });
+      expect(view(test, user, mod.myHistory)).toHaveLength(hist.length);
+      expect(view(test, user, mod.myStats)[0].plays0 + view(test, user, mod.myStats)[0].plays1 + view(test, user, mod.myStats)[0].plays2).toBe(10);
+      expect([...test.db.stats.iter()]).toHaveLength(1);
+    } finally { config.firebaseProjectId = ''; }
+  });
+});
+
+describe('daily challenge', () => {
+  const DAY = 24n * 3600n * 1_000_000n;
+  const later = (test: any, days: number) => test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + BigInt(days) * DAY));
+  const stats = (test: any, c: any) => (mod.myStats as any)(test.viewContext(c.auth))[0];
+
+  it('deals everyone the same hands, allows one try a day, and refuses a rematch', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    expect(() => a.call(mod.startDaily)).toThrow('tutorial');
+    a.call(mod.finishTutorial); b.call(mod.finishTutorial);
+    a.call(mod.startDaily);
+    expect(a.game()).toMatchObject({ mode: 'daily', rated: false, oppIsBot: true });
+    expect(a.game().oppName).toMatch(/_daily$/);
+    const handA = a.hand().map((c: any) => c.kind), botA = a.game().oppName;
+    playOut([a]);
+    b.call(mod.startDaily);
+    expect(b.hand().map((c: any) => c.kind)).toEqual(handA);
+    expect(b.game().oppName).toBe(botA);
+    playOut([b]);
+    // same hands, same choices, and the bot plays in a fixed order: the same match
+    expect(a.log().map((l: any) => [l.you, l.opp])).toEqual(b.log().map((l: any) => [l.you, l.opp]));
+    expect(a.game().youScore).toBe(b.game().youScore);
+    expect(() => a.call(mod.rematch)).toThrow('One daily challenge a day');
+    expect(() => a.call(mod.startDaily)).toThrow("played today's challenge");
+    const s = stats(test, a);
+    expect(s).toMatchObject({ dailyStreak: 1, dailyBest: 1, dailyResult: a.game().endResult, dailyYou: a.game().youScore });
+    const today = (mod.dailyStats as any)(test.anonymousViewContext()) as any[];
+    expect(today).toHaveLength(1);
+    expect(today[0]).toMatchObject({ plays: 2, wins: a.game().endResult === 'win' ? 2 : 0 });
+    expect(a.me().practiceDone).toBe(true);
+  });
+
+  it('builds a streak on consecutive days and resets it after a missed day', () => {
+    const { test, client } = setup();
+    const a = client('a');
+    a.call(mod.finishTutorial);
+    a.call(mod.startDaily); a.call(mod.forfeit);   // quitting still uses up the day's try
+    expect(stats(test, a)).toMatchObject({ dailyStreak: 1, dailyResult: 'loss' });
+    later(test, 1);
+    a.call(mod.startDaily);
+    const dealt = a.hand().map((c: any) => c.kind).join();
+    a.call(mod.forfeit);
+    expect(stats(test, a).dailyStreak).toBe(2);
+    later(test, 2);
+    a.call(mod.startDaily);
+    expect(a.hand().map((c: any) => c.kind).join()).not.toBe(dealt); // a new day, a new deal (all but certainly)
+    a.call(mod.forfeit);
+    expect(stats(test, a)).toMatchObject({ dailyStreak: 1, dailyBest: 2 });
+  });
+});
+
+describe('seasons', () => {
+  it('starts a new season each month: ratings move halfway back to 1000 and the leaderboard empties', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.claimName, { name: 'alice' }); b.call(mod.claimName, { name: 'bob' });
+    a.qualify(); b.qualify();
+    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    playOut([a, b]);
+    const ra = a.me().rating, rb = b.me().rating;
+    expect(((mod.leaderboard as any)(test.anonymousViewContext()) as any[])).toHaveLength(2);
+    test.clock.set(Timestamp.fromDate(new Date('2026-12-01T00:05:00Z')));
+    client('c'); // anyone connecting starts the new season
+    expect(a.me().rating).toBe(1000 + Math.round((ra - 1000) / 2));
+    expect(b.me().rating).toBe(1000 + Math.round((rb - 1000) / 2));
+    expect(((mod.leaderboard as any)(test.anonymousViewContext()) as any[])).toEqual([]);
+    expect((mod.myStats as any)(test.viewContext(a.auth))[0].lastSeason).toBe(ra);
+    const info = ((mod.seasonInfo as any)(test.anonymousViewContext()) as any[])[0];
+    expect(info.key).toBe(2026 * 12 + 11);
+    expect(info.champ).toBe(ra >= rb ? 'alice' : 'bob');
   });
 });
