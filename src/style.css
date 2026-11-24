@@ -755,3 +755,6 @@ body.chatOpen .chatSheet{transform:none;visibility:visible;transition:transform 
 .wNote{font-size:12px;text-align:center}
 #scrWatch.idle .wBoard,#scrWatch.idle .wArena{opacity:.35}
 .friendsModal .row input{text-align:left;font-family:var(--body);font-size:16px;letter-spacing:0;text-transform:none}
+/* sheet close buttons: always visible (.logClose alone is phone-only), and stay in reach while scrolling */
+.stClose{display:block;position:sticky;top:0;align-self:flex-end;margin:-12px -8px -34px 0;z-index:2;width:36px;height:36px;border-radius:50%;background:rgba(8,6,28,.6);color:var(--text);font-size:18px}
+.doneBtn{margin-top:4px}

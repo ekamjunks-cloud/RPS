@@ -559,7 +559,11 @@ function ago(t: number) {
 }
 $('btnStats').onclick = () => { renderStats(); $('statsModal').classList.remove('hide'); $('statsModal').scrollTop = 0; };
 $('statsClose').onclick = () => $('statsModal').classList.add('hide');
-$('statsModal').addEventListener('click', (e: Event) => { if (e.target === $('statsModal')) $('statsModal').classList.add('hide'); });
+// sheets close with their ✕, their Close/Done button, or a tap on the dimmed area around them
+for (const [id, btn] of [['statsModal', 'statsDone'], ['lookModal', 'lookDone'], ['friendsModal', 'friendsDone'], ['reportModal', '']] as const) {
+  $(id).addEventListener('click', (e: Event) => { if (e.target === $(id)) $(id).classList.add('hide'); });
+  if (btn) $(btn).onclick = () => $(id).classList.add('hide');
+}
 
 let waitStart = 0, waitTick: any = 0, waitKey = '';
 function waitScreen(title: string, code: string, sub: string) {
