@@ -50,4 +50,5 @@ export default __t.row({
   oppSkin: __t.string().name("opp_skin"),
   oppFriend: __t.string().name("opp_friend"),
   watchers: __t.u32(),
+  xpGain: __t.u32().name("xp_gain"),
 });

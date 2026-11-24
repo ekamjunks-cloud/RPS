@@ -27,7 +27,17 @@ const DAILY_STAT_KEEP_DAYS = 3;
 // looks: keep in step with AVATARS, FRAMES and SKINS in src/social.ts
 const AVATARS = ['😎', '🤖', '🦊', '🐼', '🐯', '🦁', '🐸', '🐙', '🦄', '🐲', '👻', '👽', '🤠', '🥷', '🧙', '🧛', '🐵', '🐧', '🦈', '🌵', '🍕', '⚡', '🌙', '🔥'];
 const FRAME_UNLOCK: Record<string, string> = { '': '', rookie: 'first_win', fire: 'streak5', gold: 'gold', diamond: 'diamond', daily: 'daily7' };
-const SKINS = ['classic', 'neon', 'wood', 'pixel'];
+// card styles unlock by level: the long-term grind. Keep in step with SKINS in src/social.ts.
+const SKIN_LEVEL: Record<string, number> = { classic: 1, neon: 5, wood: 10, pixel: 15, ice: 20, lava: 30, galaxy: 40, gold: 50 };
+// XP for a finished match, before the mode multiplier. Forfeits and disconnects give the winner a little, the loser nothing.
+const XP = { win: 30, draw: 15, loss: 10, walkover: 10, dailyBonus: 25 };
+const XP_MULT: Record<string, number> = { ranked: 1.5, room: 1, daily: 1, bot: 0.5, practice: 0.5 };
+/** Level from total XP. Level n needs 100 + 25 × (n − 1) XP to reach level n + 1. */
+function levelOf(xp: number) {
+  let level = 1, need = 100;
+  while (xp >= need) { xp -= need; level += 1; need = 100 + 25 * (level - 1); }
+  return { level, into: xp, need };
+}
 const FRIENDS_MAX = 100;
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 
@@ -107,6 +117,8 @@ const game = table(
     lock1: t.bool().default(false),
     rematch0: t.bool().default(false), // asked for a rematch on the end screen
     rematch1: t.bool().default(false),
+    xp0: t.u32().default(0),           // XP each player earned from this match
+    xp1: t.u32().default(0),
   }
 );
 
@@ -260,6 +272,7 @@ const stats = table(
     dailyResult: t.string(), // '' while today's is being played, then 'win' | 'loss' | 'draw'
     dailyYou: t.u32(), dailyThem: t.u32(),
     lastSeason: t.i32(),    // rating at the end of the previous season (0 = didn't play it)
+    xp: t.u32().default(0), // lifetime experience: levels unlock card styles
   }
 );
 
@@ -468,7 +481,7 @@ function statsOf(ctx: Ctx, who: Identity): StatsRow {
   return ctx.db.stats.identity.find(who) ?? {
     identity: who, plays0: 0, plays1: 0, plays2: 0, wins0: 0, wins1: 0, wins2: 0, opens0: 0, opens1: 0, opens2: 0,
     streak: 0, bestStreak: 0, perfects: 0, dailyLast: 0, dailyStreak: 0, dailyBest: 0, dailyWins: 0,
-    dailyResult: '', dailyYou: 0, dailyThem: 0, lastSeason: 0,
+    dailyResult: '', dailyYou: 0, dailyThem: 0, lastSeason: 0, xp: 0,
   };
 }
 function saveStats(ctx: Ctx, s: StatsRow) {
@@ -543,10 +556,15 @@ function recordMatch(ctx: Ctx, g: GameRow, seat: number, p: PlayerRow, ratingCha
   if (logs[0] && mine(logs[0]) >= 0) opens[mine(logs[0])]! += 1;
   const perfect = won && logs.length === ROUNDS && logs.every(l => l.winner === seat);
   const streak = won ? s.streak + 1 : 0;
+  const full = g.reason === 'points';
+  const gained = Math.round(((full ? (won ? XP.win : lost ? XP.loss : XP.draw) : won ? XP.walkover : 0)
+    + (g.mode === 'daily' && full ? XP.dailyBonus : 0)) * (XP_MULT[g.mode] ?? 1));
+  if (seat === 0) g.xp0 = gained; else g.xp1 = gained;
   const next: StatsRow = {
     ...s, plays0: plays[0]!, plays1: plays[1]!, plays2: plays[2]!, wins0: wins[0]!, wins1: wins[1]!, wins2: wins[2]!,
     opens0: opens[0]!, opens1: opens[1]!, opens2: opens[2]!,
     streak, bestStreak: Math.max(s.bestStreak, streak), perfects: s.perfects + (perfect ? 1 : 0),
+    xp: s.xp + gained,
   };
   if (g.mode === 'daily') {
     next.dailyResult = res; next.dailyYou = you; next.dailyThem = them;
@@ -597,7 +615,7 @@ function startGame(ctx: Ctx, a: PlayerRow, b: PlayerRow | undefined, mode: strin
     last0: NONE, last1: NONE, lastWinner: -1,
     over: false, winner: -1, reason: '', ratingDelta: 0,
     conn0: a.conns > 0, conn1: b ? b.conns > 0 : true, dc0: EPOCH, dc1: EPOCH,
-    lock0: false, lock1: false, rematch0: false, rematch1: false,
+    lock0: false, lock1: false, rematch0: false, rematch1: false, xp0: 0, xp1: 0,
   });
   // deal: 3 of two kinds and 4 of a third, shuffled
   for (const seat of [0, 1]) {
@@ -1100,6 +1118,7 @@ export const sendChat = spacetimedb.reducer({ kind: t.string(), body: t.string()
 });
 
 // ---------- looks, friends, invites, reports, watching ----------
+const allSkins = (who: Identity) => config.allSkins.includes(who.toHexString().replace(/^0x/, '').toLowerCase());
 const lookOf = (ctx: Ctx, who: Identity) => ctx.db.look.identity.find(who) ?? { identity: who, avatar: '', frame: '', skin: 'classic' };
 function hasAch(ctx: Ctx, who: Identity, key: string) {
   for (const a of ctx.db.achievement.identity.filter(who)) if (a.key === key) return true;
@@ -1112,11 +1131,9 @@ export const setLook = spacetimedb.reducer({ avatar: t.string(), frame: t.string
   if (avatar !== '' && !AVATARS.includes(avatar)) throw new SenderError('Pick one of the avatars');
   if (!(frame in FRAME_UNLOCK)) throw new SenderError('Unknown frame');
   if (FRAME_UNLOCK[frame] && !hasAch(ctx, p.identity, FRAME_UNLOCK[frame]!)) throw new SenderError('That frame is still locked');
-  if (!SKINS.includes(skin)) throw new SenderError('Unknown card style');
-  const played = p.wins + p.losses + p.draws;
-  const achCount = Array.from(ctx.db.achievement.identity.filter(p.identity)).length;
-  if ((skin === 'neon' && played < 10) || (skin === 'wood' && p.wins < 15) || (skin === 'pixel' && achCount < 5)) {
-    throw new SenderError('That card style is still locked');
+  if (!(skin in SKIN_LEVEL)) throw new SenderError('Unknown card style');
+  if (!allSkins(p.identity) && levelOf(statsOf(ctx, p.identity).xp).level < SKIN_LEVEL[skin]!) {
+    throw new SenderError(`That card style unlocks at level ${SKIN_LEVEL[skin]}`);
   }
   const row = { identity: p.identity, avatar, frame, skin };
   if (ctx.db.look.identity.find(p.identity)) ctx.db.look.identity.update(row); else ctx.db.look.insert(row);
@@ -1327,6 +1344,7 @@ const meRow = t.row('Me', {
   frame: t.string(),
   skin: t.string(),
   watching: t.string(),   // the friend you're watching, '' if none
+  allSkins: t.bool(),     // every card style unlocked
 });
 
 export const myPlayer = spacetimedb.view({ name: 'my_player', public: true }, t.array(meRow), ctx => {
@@ -1337,6 +1355,7 @@ export const myPlayer = spacetimedb.view({ name: 'my_player', public: true }, t.
     tutorialDone: p.tutorialDone, practiceDone: p.practiceDone, waiting: p.waiting, roomCode: p.roomCode,
     ...lookFields(ctx, p.identity),
     watching: (() => { const w = ctx.db.watcher.identity.find(p.identity); return w ? ctx.db.player.identity.find(w.target)?.name ?? '' : ''; })(),
+    allSkins: allSkins(p.identity),
   }];
 });
 
@@ -1393,6 +1412,7 @@ const gameViewRow = t.row('GameView', {
   oppSkin: t.string(),
   oppFriend: t.string(),      // '' | 'out' | 'in' | 'friends'
   watchers: t.u32(),          // friends watching this match
+  xpGain: t.u32(),            // end screen: XP you earned
 });
 
 const result = (winner: number, seat: number) => (winner === -1 ? 'draw' : winner === seat ? 'win' : 'loss');
@@ -1431,6 +1451,7 @@ export const myGame = spacetimedb.view({ name: 'my_game', public: true }, t.arra
     oppRating: g.p1Bot ? 0 : (ctx.db.player.identity.find(you ? g.p1 : g.p0)?.rating ?? 0),
     ...(g.p1Bot ? { oppAvatar: '🤖', oppFrame: '', oppSkin: 'classic' } : (({ avatar, frame, skin }) => ({ oppAvatar: avatar, oppFrame: frame, oppSkin: skin }))(lookFields(ctx, you ? g.p1 : g.p0))),
     oppFriend: g.p1Bot ? '' : (() => { for (const f of ctx.db.friend.owner.filter(ctx.sender)) if (f.other.isEqual(you ? g.p1 : g.p0)) return f.state; return ''; })(),
+    xpGain: you ? g.xp0 : g.xp1,
     watchers: Array.from(ctx.db.watcher.target.filter(g.p0)).length + (g.p1Bot ? 0 : Array.from(ctx.db.watcher.target.filter(g.p1)).length),
   }];
 });
@@ -1489,7 +1510,7 @@ const statsViewRow = t.row('StatsView', {
   plays0: t.u32(), plays1: t.u32(), plays2: t.u32(), wins0: t.u32(), wins1: t.u32(), wins2: t.u32(),
   opens0: t.u32(), opens1: t.u32(), opens2: t.u32(), streak: t.u32(), bestStreak: t.u32(), perfects: t.u32(),
   dailyLast: t.u32(), dailyStreak: t.u32(), dailyBest: t.u32(), dailyWins: t.u32(),
-  dailyResult: t.string(), dailyYou: t.u32(), dailyThem: t.u32(), lastSeason: t.i32(),
+  dailyResult: t.string(), dailyYou: t.u32(), dailyThem: t.u32(), lastSeason: t.i32(), xp: t.u32(),
 });
 
 /** Your own lifetime stats and daily challenge state. */

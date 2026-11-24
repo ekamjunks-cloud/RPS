@@ -7,7 +7,7 @@ import { KINDS, ICON, face, BACK, mini, TROPHY, SKULL, SHAKE, SPEAKER_ON, SPEAKE
 import { sfx, unlock, isMuted, setMuted } from './sfx';
 import { burstAt, confetti, vibrate } from './fx';
 import { drawResultCard } from './card';
-import { AVATARS, FRAMES, SKINS, REPORT_REASONS, avatarHtml } from './social';
+import { AVATARS, FRAMES, SKINS, REPORT_REASONS, avatarHtml, levelOf, nextSkin } from './social';
 import { tierOf, nextTier, tierBadge, ACHIEVEMENTS, achievementOf, today, msToNextDay, msToSeasonEnd, seasonName, shortTime } from './ranks';
 
 const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'https://maincloud.spacetimedb.com';
@@ -123,7 +123,7 @@ let triedFreshToken = false;
 async function connect() {
   const my = ++gen;
   try { if (conn) conn.disconnect(); } catch {}
-  achSeen = null;
+  achSeen = null; lvlSeen = 0;
   ready = false; me = null; G = null; localHand = null; prevPhase = null; phaseKey = ''; dismissed = null; overlay = null;
   skippingTutorial = false;
   closeModals();
@@ -257,7 +257,7 @@ function buildState(gv: any) {
     totalRounds: gv.totalRounds, pickMs: gv.pickMs, phaseMs: gv.phaseMs, rated: gv.rated, ratingChange: gv.ratingChange,
     you: { name: gv.youName, score: gv.youScore, hand, sel: gv.youSel === 0n ? null : String(gv.youSel), ready: gv.youReady,
       locked: gv.youLocked || (gv.phase === 'pick' && lockPending === lockKey) },
-    watchers: gv.watchers,
+    watchers: gv.watchers, xpGain: gv.xpGain,
     opp: { name: gv.oppName, isBot: gv.oppIsBot, rating: gv.oppRating, avatar: gv.oppAvatar, frame: gv.oppFrame, skin: gv.oppSkin, friend: gv.oppFriend, score: gv.oppScore, handCount: gv.oppHandCount, ready: gv.oppReady, placed: gv.oppPlaced, connected: gv.oppConnected },
     reveal: gv.revealShown ? { n: gv.round, you: kindName(gv.revealYou), opp: kindName(gv.revealOpp), result: gv.revealResult || null } : null,
     log,
@@ -273,6 +273,7 @@ function sync() {
   if (!meRow) return;
   me = meRow;
   checkAchievements();
+  checkLevel();
   renderMe();
   renderBoard();
   renderInvites();
@@ -444,6 +445,7 @@ function renderMe() {
   $('quickIc').innerHTML = locked ? LOCK : ICON.scissors;
   $('quickSub').textContent = locked ? 'Finish one practice match to unlock' : ONLINE_NEEDS_ACCOUNT && me.isGuest ? 'Ranked · needs an account' : 'Ranked · find an opponent';
   renderTier();
+  renderLevel();
   renderDaily();
   $('achCount').textContent = `${conn.db.myAchievements.count()}/${ACHIEVEMENTS.length} 🏅`;
   if (notice) { homeMsg(notice); notice = ''; }
@@ -476,6 +478,55 @@ function renderTier() {
   const last = myStats()?.lastSeason;
   $('tierNext').textContent = (n ? `${n.min - me.rating} rating to ${n.name}` : 'Top rank. Stay there!')
     + (last ? ` · last season ${tierOf(last).name} (${last})` : '');
+}
+function renderLevel() {
+  const { level, into, need } = levelOf(myStats()?.xp || 0);
+  $('lvlNum').textContent = level; $('lvlN').textContent = level;
+  $('lvlXp').textContent = `${into} / ${need} XP`;
+  $('lvlFill').style.width = `${Math.max(2, Math.round((into / need) * 100))}%`;
+  const ns = nextSkin(level);
+  $('lvlNext').textContent = me.allSkins ? 'Every card style unlocked ✨' : ns ? `Next card style: ${ns.name} at level ${ns.level}` : 'Every card style unlocked ✨';
+}
+// ---------- unlock popups: achievements, level-ups and card styles, shown one at a time at the top ----------
+type Pop = { icon: string; label: string; title: string; sub: string; kind?: string };
+const popQueue: Pop[] = [];
+let popBusy = false, popTimer: any = 0;
+function popup(p: Pop) {
+  popQueue.push(p);
+  // wait for the result screen and its fanfare before the first one
+  if (!popBusy) { popBusy = true; popTimer = setTimeout(nextPop, 1300); }
+}
+function nextPop() {
+  const el = $('achPop');
+  const p = popQueue.shift();
+  if (!p) { popBusy = false; return; }
+  el.className = 'achPop ' + (p.kind || '');
+  el.innerHTML = `<div class="apIc">${p.icon}</div><div class="apTx"><small>${esc(p.label)}</small><b>${esc(p.title)}</b><span>${esc(p.sub)}</span></div>`;
+  void el.offsetWidth;
+  el.classList.add('on');
+  sfx.unlock();
+  vibrate([15, 30, 15]);
+  setTimeout(() => burstAt(el.querySelector('.apIc'), p.kind === 'skin' ? ['#6fe0ff', '#ff7ac0', '#fff'] : ['#ffc83d', '#fff3c4', '#ffb21f'], 16), 300);
+  popTimer = setTimeout(hidePop, 3000);
+}
+function hidePop() {
+  clearTimeout(popTimer);
+  $('achPop').classList.remove('on');
+  popTimer = setTimeout(nextPop, 380);
+}
+if (import.meta.env.DEV) (window as any).__popup = popup; // for trying the popup from the browser console while developing
+$('achPop').addEventListener('click', () => { if ($('achPop').classList.contains('on')) hidePop(); });
+
+/** Level-ups and new card styles since this connection loaded. */
+let lvlSeen = 0;
+function checkLevel() {
+  const level = levelOf(myStats()?.xp || 0).level;
+  if (lvlSeen && level > lvlSeen) {
+    const skin = SKINS.find(k => k.level > lvlSeen && k.level <= level);
+    popup({ icon: `<span class="apLvl">${level}</span>`, label: 'Level up', title: `Level ${level}`, sub: 'Keep playing to earn more card styles', kind: 'lvl' });
+    if (skin && !me.allSkins) popup({ icon: `<div class="tc" data-skin="${skin.key}">${face('rock')}</div>`, label: 'New card style', title: skin.name, sub: 'Equip it from your avatar in the lobby', kind: 'skin' });
+  }
+  lvlSeen = level;
 }
 function dailyState() {
   const s = myStats(), day = today();
@@ -513,7 +564,7 @@ function checkAchievements() {
     if (achSeen.has(k)) continue;
     achSeen.add(k); achNew.push(k);
     const a = achievementOf(k);
-    if (a) setTimeout(() => toast(`${a.icon} Achievement unlocked: ${a.name}`, 'ach'), 900);
+    if (a) popup({ icon: `<span class="apEmo">${a.icon}</span>`, label: 'Achievement unlocked', title: a.name, sub: a.how });
   }
 }
 
@@ -918,6 +969,7 @@ function showEnd() {
   if (G.rated) chips.push(`<span class="${G.ratingChange >= 0 ? 'up' : 'down'}">Rating ${G.ratingChange >= 0 ? '+' : ''}${G.ratingChange}</span>`);
   if (me && !unlockedBefore && me.practiceDone && G.opp.isBot && e.reason === 'points') chips.push('<span class="up">Online play unlocked</span>');
   if (G.mode === 'daily') { const st = dailyState(); if (st.streak) chips.push(`🔥 ${st.streak}-day streak`); }
+  if (G.xpGain) chips.push(`<span class="xp">+${G.xpGain} XP</span>`);
   for (const k of achNew) { const a = achievementOf(k); if (a) chips.push(`<span class="up">${a.icon} ${esc(a.name)}</span>`); }
   $('endChips').innerHTML = chips.map(c => `<span class="ec">${c}</span>`).join('');
   renderRematch();
@@ -1302,7 +1354,7 @@ function lookUnlocks() {
   return { achs, p: { played: me.wins + me.losses + me.draws, wins: me.wins, ach: achs.size } };
 }
 function renderLook() {
-  const { achs, p } = lookUnlocks();
+  const { achs } = lookUnlocks();
   $('lookPreview').innerHTML = avatarHtml(me.name, me.avatar, me.frame, 'lg')
     + `<div class="lpCards" data-skin="${me.skin || 'classic'}">${['rock', 'paper', 'scissors'].map(k => `<div class="tc">${face(k)}</div>`).join('')}</div>`;
   $('avGrid').innerHTML = [`<button class="avPick${!me.avatar ? ' on' : ''}" data-av="">${esc(initialOf(me.name))}</button>`]
@@ -1312,10 +1364,11 @@ function renderLook() {
     return `<button class="frPick${me.frame === f.key ? ' on' : ''}${open ? '' : ' locked'}" data-fr="${f.key}" ${open ? '' : 'disabled'}>`
       + `${avatarHtml(me.name, me.avatar, f.key, 'sm')}<b>${f.name}</b><small>${open ? (me.frame === f.key ? 'On' : '') : '🔒 ' + f.how}</small></button>`;
   }).join('');
+  const lvl = levelOf(myStats()?.xp || 0).level;
   $('skGrid').innerHTML = SKINS.map(k => {
-    const open = k.open(p);
+    const open = me.allSkins || lvl >= k.level;
     return `<button class="skPick${(me.skin || 'classic') === k.key ? ' on' : ''}${open ? '' : ' locked'}" data-sk="${k.key}" ${open ? '' : 'disabled'}>`
-      + `<div class="tc" data-skin="${k.key}">${face('rock')}</div><b>${k.name}</b><small>${open ? '' : '🔒 ' + k.how}</small></button>`;
+      + `<div class="tc" data-skin="${k.key}">${face('rock')}</div><b>${k.name}</b><small>${open ? '' : '🔒 Level ' + k.level}</small></button>`;
   }).join('');
 }
 function saveLook(change: Partial<{ avatar: string; frame: string; skin: string }>) {

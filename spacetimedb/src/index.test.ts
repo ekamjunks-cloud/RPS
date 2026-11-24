@@ -723,7 +723,7 @@ describe('looks', () => {
     expect(a.me()).toMatchObject({ avatar: '🦊', frame: '', skin: 'classic' });
     expect(() => a.call(mod.setLook, { avatar: 'hello', frame: '', skin: 'classic' })).toThrow('Pick one of the avatars');
     expect(() => a.call(mod.setLook, { avatar: '🦊', frame: 'gold', skin: 'classic' })).toThrow('frame is still locked');
-    expect(() => a.call(mod.setLook, { avatar: '🦊', frame: '', skin: 'neon' })).toThrow('card style is still locked');
+    expect(() => a.call(mod.setLook, { avatar: '🦊', frame: '', skin: 'neon' })).toThrow('unlocks at level 5');
     expect(() => a.call(mod.setLook, { avatar: '🦊', frame: 'nope', skin: 'classic' })).toThrow('Unknown frame');
     // the opponent sees it
     a.call(mod.createRoom);
@@ -837,5 +837,63 @@ describe('watching a friend', () => {
     a.call(mod.startPractice);
     expect(a.me().watching).toBe('');
     expect(b.game().watchers).toBe(0);
+  });
+});
+
+describe('XP and card style unlocks', () => {
+  const xpOf = (test: any, c: any) => ((mod.myStats as any)(test.viewContext(c.auth))[0] || { xp: 0 }).xp;
+  const setXp = (test: any, c: any, xp: number) => {
+    const row = test.db.stats.identity.find(c.me().identity);
+    test.db.stats.identity.update({ ...row, xp });
+  };
+
+  it('gives half XP for bot matches, nothing to a player who quits, and more for ranked', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a');
+    a.call(mod.startPractice); playOut([a]);
+    const r = a.game().endResult;
+    expect(a.game().xpGain).toBe(r === 'win' ? 15 : r === 'draw' ? 8 : 5);
+    expect(xpOf(test, a)).toBe(a.game().xpGain);
+    a.call(mod.leaveGame);
+    a.call(mod.startPractice); a.call(mod.forfeit);
+    expect(a.game().xpGain).toBe(0);
+
+    const s = setup();
+    const x = s.client('x'), y = s.client('y');
+    x.call(mod.claimName, { name: 'xena' }); y.call(mod.claimName, { name: 'yuri' });
+    x.qualify(); y.qualify();
+    const before = xpOf(s.test, x);
+    x.call(mod.joinQueue); y.call(mod.joinQueue);
+    s.playOut([x, y]);
+    const res = x.game().endResult;
+    expect(x.game().xpGain).toBe(res === 'win' ? 45 : res === 'draw' ? 23 : 15);
+    expect(xpOf(s.test, x) - before).toBe(x.game().xpGain);
+  });
+
+  it('unlocks card styles by level', () => {
+    const { test, client } = setup();
+    const a = client('a');
+    a.call(mod.startPractice); a.call(mod.forfeit); // creates the stats row
+    setXp(test, a, 549);  // just short of level 5
+    expect(() => a.call(mod.setLook, { avatar: '', frame: '', skin: 'neon' })).toThrow('unlocks at level 5');
+    setXp(test, a, 550);  // level 5: 100 + 125 + 150 + 175
+    a.call(mod.setLook, { avatar: '', frame: '', skin: 'neon' });
+    expect(a.me().skin).toBe('neon');
+    expect(() => a.call(mod.setLook, { avatar: '', frame: '', skin: 'wood' })).toThrow('unlocks at level 10');
+    expect(() => a.call(mod.setLook, { avatar: '', frame: '', skin: 'gold' })).toThrow('unlocks at level 50');
+  });
+
+  it('unlocks every card style for the accounts listed in the config', () => {
+    const { client } = setup();
+    const a = client('a'), b = client('b');
+    const saved = config.allSkins;
+    config.allSkins = [a.me().identity.toHexString().replace(/^0x/, '').toLowerCase()];
+    try {
+      expect(a.me().allSkins).toBe(true);
+      expect(b.me().allSkins).toBe(false);
+      a.call(mod.setLook, { avatar: '', frame: '', skin: 'gold' });
+      expect(a.me().skin).toBe('gold');
+      expect(() => b.call(mod.setLook, { avatar: '', frame: '', skin: 'gold' })).toThrow('unlocks at level 50');
+    } finally { config.allSkins = saved; }
   });
 });

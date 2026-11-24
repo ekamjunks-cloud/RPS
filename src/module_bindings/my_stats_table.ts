@@ -31,4 +31,5 @@ export default __t.row({
   dailyYou: __t.u32().name("daily_you"),
   dailyThem: __t.u32().name("daily_them"),
   lastSeason: __t.i32().name("last_season"),
+  xp: __t.u32(),
 });

@@ -26,4 +26,5 @@ export default __t.row({
   frame: __t.string(),
   skin: __t.string(),
   watching: __t.string(),
+  allSkins: __t.bool().name("all_skins"),
 });

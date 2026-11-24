@@ -13,13 +13,27 @@ export const FRAMES: Frame[] = [
   { key: 'diamond', name: 'Diamond', ach: 'diamond', how: 'Reach Diamond' },
 ];
 
-export type Skin = { key: string; name: string; how: string; open: (p: { played: number; wins: number; ach: number }) => boolean };
+// Card styles are the long grind: each unlocks at a level, and levels come from XP earned in matches.
+// Keep levels in step with SKIN_LEVEL in spacetimedb/src/index.ts.
+export type Skin = { key: string; name: string; level: number };
 export const SKINS: Skin[] = [
-  { key: 'classic', name: 'Classic', how: '', open: () => true },
-  { key: 'neon', name: 'Neon', how: 'Play 10 matches', open: p => p.played >= 10 },
-  { key: 'wood', name: 'Wood', how: 'Win 15 matches', open: p => p.wins >= 15 },
-  { key: 'pixel', name: 'Pixel', how: 'Unlock 5 achievements', open: p => p.ach >= 5 },
+  { key: 'classic', name: 'Classic', level: 1 },
+  { key: 'neon', name: 'Neon', level: 5 },
+  { key: 'wood', name: 'Wood', level: 10 },
+  { key: 'pixel', name: 'Pixel', level: 15 },
+  { key: 'ice', name: 'Ice', level: 20 },
+  { key: 'lava', name: 'Lava', level: 30 },
+  { key: 'galaxy', name: 'Galaxy', level: 40 },
+  { key: 'gold', name: 'Gold', level: 50 },
 ];
+
+/** Level from total XP, the same sum as the server: level n needs 100 + 25 × (n − 1) XP to go up. */
+export function levelOf(xp: number) {
+  let level = 1, need = 100;
+  while (xp >= need) { xp -= need; level += 1; need = 100 + 25 * (level - 1); }
+  return { level, into: xp, need };
+}
+export const nextSkin = (level: number) => SKINS.find(k => k.level > level) ?? null;
 
 export const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 

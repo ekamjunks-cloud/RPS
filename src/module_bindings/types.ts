@@ -116,6 +116,8 @@ export const Game = __t.object("Game", {
   lock1: __t.bool(),
   rematch0: __t.bool(),
   rematch1: __t.bool(),
+  xp0: __t.u32(),
+  xp1: __t.u32(),
 });
 export type Game = __Infer<typeof Game>;
 
@@ -168,6 +170,7 @@ export const GameView = __t.object("GameView", {
   oppSkin: __t.string(),
   oppFriend: __t.string(),
   watchers: __t.u32(),
+  xpGain: __t.u32(),
 });
 export type GameView = __Infer<typeof GameView>;
 
@@ -298,6 +301,7 @@ export const Me = __t.object("Me", {
   frame: __t.string(),
   skin: __t.string(),
   watching: __t.string(),
+  allSkins: __t.bool(),
 });
 export type Me = __Infer<typeof Me>;
 
@@ -457,6 +461,7 @@ export const Stats = __t.object("Stats", {
   dailyYou: __t.u32(),
   dailyThem: __t.u32(),
   lastSeason: __t.i32(),
+  xp: __t.u32(),
 });
 export type Stats = __Infer<typeof Stats>;
 
@@ -481,6 +486,7 @@ export const StatsView = __t.object("StatsView", {
   dailyYou: __t.u32(),
   dailyThem: __t.u32(),
   lastSeason: __t.i32(),
+  xp: __t.u32(),
 });
 export type StatsView = __Infer<typeof StatsView>;
 
