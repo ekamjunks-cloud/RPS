@@ -45,4 +45,9 @@ export default __t.row({
   oppRematch: __t.bool().name("opp_rematch"),
   oppLeft: __t.bool().name("opp_left"),
   oppRating: __t.i32().name("opp_rating"),
+  oppAvatar: __t.string().name("opp_avatar"),
+  oppFrame: __t.string().name("opp_frame"),
+  oppSkin: __t.string().name("opp_skin"),
+  oppFriend: __t.string().name("opp_friend"),
+  watchers: __t.u32(),
 });

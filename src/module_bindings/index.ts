@@ -34,12 +34,17 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptFriendReducer from "./accept_friend_reducer";
+import AddFriendReducer from "./add_friend_reducer";
+import AddOpponentReducer from "./add_opponent_reducer";
 import ClaimNameReducer from "./claim_name_reducer";
 import ClaimTransferReducer from "./claim_transfer_reducer";
 import CloseRoomReducer from "./close_room_reducer";
 import CreateRoomReducer from "./create_room_reducer";
+import DismissInviteReducer from "./dismiss_invite_reducer";
 import FinishTutorialReducer from "./finish_tutorial_reducer";
 import ForfeitReducer from "./forfeit_reducer";
+import InviteFriendReducer from "./invite_friend_reducer";
 import JoinQueueReducer from "./join_queue_reducer";
 import JoinRoomReducer from "./join_room_reducer";
 import LeaveGameReducer from "./leave_game_reducer";
@@ -48,11 +53,16 @@ import LockInReducer from "./lock_in_reducer";
 import PrepareTransferReducer from "./prepare_transfer_reducer";
 import ReadyReducer from "./ready_reducer";
 import RematchReducer from "./rematch_reducer";
+import RemoveFriendReducer from "./remove_friend_reducer";
 import ReorderHandReducer from "./reorder_hand_reducer";
+import ReportPlayerReducer from "./report_player_reducer";
 import SelectCardReducer from "./select_card_reducer";
 import SendChatReducer from "./send_chat_reducer";
+import SetLookReducer from "./set_look_reducer";
 import StartDailyReducer from "./start_daily_reducer";
 import StartPracticeReducer from "./start_practice_reducer";
+import StopWatchingReducer from "./stop_watching_reducer";
+import WatchFriendReducer from "./watch_friend_reducer";
 
 // Import all procedure arg schemas
 
@@ -61,14 +71,18 @@ import DailyStatsRow from "./daily_stats_table";
 import LeaderboardRow from "./leaderboard_table";
 import MyAchievementsRow from "./my_achievements_table";
 import MyChatRow from "./my_chat_table";
+import MyFriendsRow from "./my_friends_table";
 import MyGameRow from "./my_game_table";
 import MyHandRow from "./my_hand_table";
 import MyHistoryRow from "./my_history_table";
+import MyInvitesRow from "./my_invites_table";
 import MyLogRow from "./my_log_table";
 import MyPlayerRow from "./my_player_table";
 import MyStatsRow from "./my_stats_table";
 import MyTransferRow from "./my_transfer_table";
 import SeasonInfoRow from "./season_info_table";
+import WatchGameRow from "./watch_game_table";
+import WatchLogRow from "./watch_log_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -102,6 +116,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyChatRow),
+  myFriends: __table({
+    name: 'my_friends',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyFriendsRow),
   myGame: __table({
     name: 'my_game',
     indexes: [
@@ -123,6 +144,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyHistoryRow),
+  myInvites: __table({
+    name: 'my_invites',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyInvitesRow),
   myLog: __table({
     name: 'my_log',
     indexes: [
@@ -158,16 +186,35 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, SeasonInfoRow),
+  watchGame: __table({
+    name: 'watch_game',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, WatchGameRow),
+  watchLog: __table({
+    name: 'watch_log',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, WatchLogRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("accept_friend", AcceptFriendReducer),
+  __reducerSchema("add_friend", AddFriendReducer),
+  __reducerSchema("add_opponent", AddOpponentReducer),
   __reducerSchema("claim_name", ClaimNameReducer),
   __reducerSchema("claim_transfer", ClaimTransferReducer),
   __reducerSchema("close_room", CloseRoomReducer),
   __reducerSchema("create_room", CreateRoomReducer),
+  __reducerSchema("dismiss_invite", DismissInviteReducer),
   __reducerSchema("finish_tutorial", FinishTutorialReducer),
   __reducerSchema("forfeit", ForfeitReducer),
+  __reducerSchema("invite_friend", InviteFriendReducer),
   __reducerSchema("join_queue", JoinQueueReducer),
   __reducerSchema("join_room", JoinRoomReducer),
   __reducerSchema("leave_game", LeaveGameReducer),
@@ -176,11 +223,16 @@ const reducersSchema = __reducers(
   __reducerSchema("prepare_transfer", PrepareTransferReducer),
   __reducerSchema("ready", ReadyReducer),
   __reducerSchema("rematch", RematchReducer),
+  __reducerSchema("remove_friend", RemoveFriendReducer),
   __reducerSchema("reorder_hand", ReorderHandReducer),
+  __reducerSchema("report_player", ReportPlayerReducer),
   __reducerSchema("select_card", SelectCardReducer),
   __reducerSchema("send_chat", SendChatReducer),
+  __reducerSchema("set_look", SetLookReducer),
   __reducerSchema("start_daily", StartDailyReducer),
   __reducerSchema("start_practice", StartPracticeReducer),
+  __reducerSchema("stop_watching", StopWatchingReducer),
+  __reducerSchema("watch_friend", WatchFriendReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

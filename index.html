@@ -75,14 +75,17 @@
         <div class="logoText">RPS<b>10</b></div>
       </div>
       <div class="topBtns">
+        <button class="iconBtn friendsBtn" id="btnFriends" aria-label="Friends"><span>👥</span><b class="badge" id="friendsBadge"></b></button>
         <button class="iconBtn sndBtn" aria-label="Sound on or off"></button>
         <button class="chipBtn" id="btnProfile" aria-label="Account"><span class="av sm" id="chipAv"></span><span>Account</span></button>
       </div>
     </header>
 
+    <div class="inviteBar hide" id="inviteBar"></div>
+
     <div class="panel hero">
       <div class="heroTop">
-        <span class="av" id="meAv"></span>
+        <button class="avBtn" id="btnLook" type="button" aria-label="Change avatar and card style"><span class="av" id="meAv"></span><span class="avEdit">✏️</span></button>
         <div class="heroWho"><div class="meName" id="meName"></div><div class="meTag" id="meTag"></div></div>
         <div class="meRating"><span class="trophy" data-icon="trophy"></span><span id="meRating"></span><small>rating</small></div>
       </div>
@@ -148,6 +151,26 @@
   </div>
 </section>
 
+<!-- WATCHING A FRIEND -->
+<section class="screen" id="scrWatch">
+  <div class="wrap watch">
+    <header class="wHead"><span class="wEye">👀</span><div class="wTitle"><small>Watching</small><b id="wFriend"></b></div><button class="exit" id="btnStopWatch">Leave</button></header>
+    <div class="panel wBoard">
+      <div class="wSide a"><span id="wAvA"></span><b id="wNameA"></b><span class="wPts" id="wScoreA">0</span></div>
+      <div class="wMid"><small>Round</small><b id="wRound">1</b><small>of 10</small></div>
+      <div class="wSide b"><span id="wAvB"></span><b id="wNameB"></b><span class="wPts" id="wScoreB">0</span></div>
+      <div class="rounds" id="wStrip"></div>
+    </div>
+    <div class="wArena">
+      <div class="wSlotWrap"><div class="slot" id="wSlotA"></div><small id="wStA"></small><div class="wBacks" id="wBacksA"></div></div>
+      <div class="wTimer" id="wTimer">VS</div>
+      <div class="wSlotWrap"><div class="slot" id="wSlotB"></div><small id="wStB"></small><div class="wBacks" id="wBacksB"></div></div>
+    </div>
+    <div class="wMsg" id="wMsg"></div>
+    <p class="muted wNote">You see what both players see: scores, cards left and each card once it's revealed. Never anyone's hand.</p>
+  </div>
+</section>
+
 <!-- GAME -->
 <section class="screen" id="scrGame">
   <div class="gameLayout">
@@ -157,7 +180,7 @@
           <div class="who"><span class="tag">You</span><span class="nm" id="nameYou">You</span></div>
           <div class="scoreRow"><span class="pts" id="sYou">0</span></div>
         </div>
-        <div class="mid"><div class="rl">Round</div><div class="rn" id="round">1</div><div class="ft">of <span id="totalR">10</span></div></div>
+        <div class="mid"><div class="rl">Round</div><div class="rn" id="round">1</div><div class="ft">of <span id="totalR">10</span></div><div class="watchers hide" id="watchers"></div></div>
         <div class="rounds" id="roundStrip" aria-label="Round results"></div>
         <div class="bub you" id="bubYou"></div><div class="bub opp" id="bubOpp"></div>
         <div class="side opp" id="sideOpp">
@@ -211,6 +234,7 @@
   <div class="csHead">
     <b>Chat</b>
     <label class="muteSw"><input type="checkbox" id="chatMute"><span>Mute opponent</span></label>
+    <button class="link sm" id="chatReport" type="button">🚩 Report</button>
     <button class="logClose" id="chatClose" aria-label="Close chat">✕</button>
   </div>
   <div class="csList" id="chatList"></div>
@@ -230,7 +254,8 @@
     <button class="btn primary" id="btnRematch">Rematch</button>
     <button class="btn ghost" id="btnAgain">New opponent</button>
     <button class="btn ghost shareBtn" id="btnShareResult">📸 Share result</button>
-    <div class="endLinks"><button class="link" id="endChat">💬 Chat</button><button class="link" id="btnBack">Back to lobby</button></div>
+    <button class="btn ghost hide" id="btnAddFriend">➕ Add friend</button>
+    <div class="endLinks"><button class="link" id="endChat">💬 Chat</button><button class="link hide" id="btnReport">🚩 Report</button><button class="link" id="btnBack">Back to lobby</button></div>
   </div>
 </div>
 
@@ -292,6 +317,44 @@
     <div class="achGrid" id="achGrid"></div>
     <h4>Recent matches</h4>
     <div class="hist" id="histList"></div>
+  </div>
+</div>
+
+<div class="overlay hide" id="lookModal">
+  <div class="modal lookModal">
+    <button class="logClose stClose" id="lookClose" aria-label="Close">✕</button>
+    <h2>Your look</h2>
+    <div class="lookPreview" id="lookPreview"></div>
+    <h4>Avatar</h4>
+    <div class="avGrid" id="avGrid"></div>
+    <h4>Frame</h4>
+    <div class="frGrid" id="frGrid"></div>
+    <h4>Card style <span class="sub">Your opponent sees it too</span></h4>
+    <div class="skGrid" id="skGrid"></div>
+    <div class="err" id="lookErr"></div>
+  </div>
+</div>
+
+<div class="overlay hide" id="friendsModal">
+  <div class="modal friendsModal">
+    <button class="logClose stClose" id="friendsClose" aria-label="Close">✕</button>
+    <h2>Friends</h2>
+    <form class="row" id="addFriendForm">
+      <input id="addFriendName" placeholder="Add by username" autocomplete="off" autocapitalize="off" maxlength="16">
+      <button class="btn ghost" type="submit">Add</button>
+    </form>
+    <div class="err" id="friendsErr"></div>
+    <div id="friendsList"></div>
+    <p class="muted fHint">Tip: after a match against someone, tap <b>➕ Add friend</b> on the result screen.</p>
+  </div>
+</div>
+
+<div class="overlay hide" id="reportModal">
+  <div class="modal">
+    <h2>Report player</h2>
+    <p class="muted" id="reportWho"></p>
+    <div class="reasons" id="reportReasons"></div>
+    <button class="link" id="reportClose">Cancel</button>
   </div>
 </div>
 

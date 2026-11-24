@@ -99,6 +99,7 @@ Until you do this the game runs guest-only and the button says "Create account" 
 - **Match history:** in the SQL console, `SELECT * FROM match_result`
 - **Players and ratings:** `SELECT name, rating, wins, losses, is_guest FROM player`
 - **Live logs from Terminal:** `spacetime logs rps-10-b7hi9 --server maincloud`
+- **Player reports:** `spacetime sql rps-10-b7hi9 "SELECT reported_name, reason, at FROM report" --server maincloud`
 
 ## Why players can't cheat
 Every table is private. The browser only receives what the server's "views" return for that player:

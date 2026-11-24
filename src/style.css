@@ -641,3 +641,117 @@ body.chatOpen .chatSheet{transform:none;visibility:visible;transition:transform 
 .hrScore small{font-size:10px;color:var(--dim);font-weight:600}
 .toast.ach{background:linear-gradient(120deg,#ffd75e,#ffb21f);color:#3a2100}
 @media (max-width:360px){.achGrid{grid-template-columns:1fr}}
+
+/* ---------- card styles (skins) ---------- */
+[data-skin=neon] .cf{background:radial-gradient(circle at 50% 40%,color-mix(in srgb,var(--k1) 30%,transparent),transparent 65%),#0d0a26;color:var(--k1);box-shadow:inset 0 0 0 2px var(--k1),0 0 14px color-mix(in srgb,var(--k1) 60%,transparent),0 4px 0 #05030f}
+[data-skin=neon] .cf::before{border-color:color-mix(in srgb,var(--k1) 45%,transparent)}
+[data-skin=neon] .cf::after{display:none}
+[data-skin=neon] .cic{filter:drop-shadow(0 0 6px var(--k1))}
+[data-skin=neon] .cnm{color:var(--k1);text-shadow:0 0 8px var(--k1)}
+[data-skin=wood] .cf{background:linear-gradient(160deg,color-mix(in srgb,var(--k1) 22%,transparent),transparent 60%),repeating-linear-gradient(100deg,#b9834c 0 7px,#a8743f 7px 11px,#c08a52 11px 19px,#9d6a38 19px 22px);color:var(--k3);box-shadow:inset 0 0 0 3px #6b4220,0 4px 0 #4a2c12,0 8px 16px rgba(0,0,0,.35)}
+[data-skin=wood] .cf::before{border-color:rgba(60,32,10,.45);border-style:dashed}
+[data-skin=wood] .cf::after{opacity:.35}
+[data-skin=wood] .cic{filter:drop-shadow(0 2px 0 rgba(255,235,200,.35))}
+[data-skin=wood] .cnm{color:#3d220b;text-shadow:0 1px 0 rgba(255,230,190,.4)}
+[data-skin=pixel] .cf{border-radius:3px;background:conic-gradient(rgba(255,255,255,.08) 25%,transparent 0 50%,rgba(255,255,255,.08) 0 75%,transparent 0) 0 0/8px 8px,var(--k2);box-shadow:0 0 0 2px #000,4px 4px 0 #000;image-rendering:pixelated}
+[data-skin=pixel] .cf::before{border-radius:0;border:2px dotted rgba(255,255,255,.55)}
+[data-skin=pixel] .cf::after{display:none}
+[data-skin=pixel] .cic svg{shape-rendering:crispEdges}
+[data-skin=pixel] .cic{filter:drop-shadow(3px 3px 0 rgba(0,0,0,.5))}
+[data-skin=pixel] .cnm{font-family:'Courier New',ui-monospace,monospace;font-weight:900;letter-spacing:0}
+.slot[data-skin=pixel] .cf{border-radius:3px}
+
+/* ---------- avatars and frames ---------- */
+.av.hasEmo{background:linear-gradient(145deg,#3b3285,#211b57)}
+.av .emo{font-size:1.15em;line-height:1;text-shadow:none;font-family:system-ui,'Apple Color Emoji','Segoe UI Emoji',sans-serif}
+.av.fr-rookie{box-shadow:0 0 0 3px var(--you),0 0 12px rgba(62,230,160,.45)}
+.av.fr-fire{box-shadow:0 0 0 3px #ff8a2a,0 0 14px rgba(255,120,40,.7);animation:frFire 1.6s ease-in-out infinite}
+@keyframes frFire{50%{box-shadow:0 0 0 3px #ffc83d,0 0 20px rgba(255,170,40,.8)}}
+.av.fr-daily{box-shadow:0 0 0 3px #ff7ac0,0 0 12px rgba(255,122,192,.5)}
+.av.fr-gold{box-shadow:0 0 0 3px #ffd75e,0 0 0 5px #b06c00,0 0 14px rgba(255,200,61,.55)}
+.av.fr-diamond{box-shadow:0 0 0 3px #b9f6ff,0 0 0 5px #3d8cff,0 0 16px rgba(111,224,255,.65)}
+.av.sm.hasEmo .emo{font-size:18px}
+.avBtn{position:relative;background:none;border:0;padding:0;cursor:pointer;border-radius:16px;flex:0 0 auto}
+.avBtn .avEdit{position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:var(--panelS);border:1px solid var(--line2);font-size:11px;display:flex;align-items:center;justify-content:center}
+.avBtn:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+
+/* ---------- friends button, invites ---------- */
+.friendsBtn{position:relative;font-size:18px;padding:0}
+.badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;border-radius:9px;background:var(--opp);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;box-shadow:0 0 0 2px var(--bg0)}
+.badge:empty{display:none}
+.inviteBar{display:flex;flex-direction:column;gap:6px}
+.inv{display:flex;align-items:center;gap:10px;background:linear-gradient(120deg,rgba(62,230,160,.22),rgba(32,27,78,.8));border:1px solid rgba(62,230,160,.4);border-radius:14px;padding:9px 10px;animation:modalIn .4s cubic-bezier(.2,1.4,.4,1)}
+.invAv{font-size:24px}
+.invTx{flex:1;min-width:0;font-size:14px;text-align:left}
+.mini{background:rgba(255,255,255,.08);border:1px solid var(--line2);color:var(--text);font-family:inherit;font-size:13px;font-weight:800;padding:7px 11px;border-radius:10px;cursor:pointer;white-space:nowrap}
+.mini.go{background:linear-gradient(180deg,#55f0b2,#22c785);color:#05301f;border-color:transparent}
+.mini.dim{color:var(--muted);padding:7px 9px}
+.mini:disabled{opacity:.45;cursor:default}
+
+/* ---------- friends sheet, look picker, report ---------- */
+.friendsModal,.lookModal{max-width:440px;text-align:left;position:relative;gap:10px}
+.friendsModal h2,.lookModal h2{text-align:center}
+.lookModal h4{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:800;margin-top:4px;display:flex;justify-content:space-between;gap:8px}
+.lookModal h4 .sub{color:var(--dim);letter-spacing:.5px;text-transform:none;font-weight:600}
+.friendsModal form.row{display:flex;gap:8px}
+.friendsModal form.row .btn{width:auto;padding:10px 16px}
+.friendsModal .err:empty{display:none}
+#friendsList{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto}
+.fr{display:flex;align-items:center;gap:10px;background:rgba(8,6,28,.35);border-radius:12px;padding:8px 10px}
+.fr.in{box-shadow:inset 0 0 0 1px rgba(255,200,61,.4)}
+.frMid{flex:1;min-width:0;display:flex;flex-direction:column}
+.frMid b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frMid small{font-size:11.5px;color:var(--muted);font-weight:600}
+.fr:not(.on) .frMid small{color:var(--dim)}
+.fHint{font-size:12px;text-align:center}
+.lookPreview{display:flex;align-items:center;justify-content:center;gap:18px;padding:6px 0 4px}
+.lookPreview .av.lg{margin:0;width:68px;height:68px;font-size:30px}
+.lookPreview .av.lg .emo{font-size:38px}
+.lpCards{display:flex;gap:6px}
+.lpCards .tc{width:44px;aspect-ratio:5/7}
+.avGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:6px}
+.avPick{aspect-ratio:1;border-radius:12px;border:2px solid transparent;background:rgba(8,6,28,.4);font-size:22px;cursor:pointer;color:var(--text);font-family:var(--display);display:flex;align-items:center;justify-content:center;transition:transform .1s}
+.avPick:hover{transform:scale(1.08)}
+.avPick.on{border-color:var(--gold);background:rgba(255,200,61,.14)}
+.frGrid,.skGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.skGrid{grid-template-columns:repeat(4,1fr)}
+.frPick,.skPick{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px 8px;border-radius:12px;border:2px solid transparent;background:rgba(8,6,28,.4);color:var(--text);font-family:inherit;cursor:pointer;text-align:center}
+.frPick.on,.skPick.on{border-color:var(--gold);background:rgba(255,200,61,.12)}
+.frPick.locked,.skPick.locked{opacity:.5;cursor:default}
+.frPick b,.skPick b{font-size:12px;font-weight:800}
+.frPick small,.skPick small{font-size:10px;color:var(--muted);font-weight:600;line-height:1.2;min-height:12px}
+.frPick .av.sm{width:34px;height:34px;border-radius:10px;font-size:16px}
+.skPick .tc{width:40px;aspect-ratio:5/7}
+.reasons{display:flex;flex-direction:column;gap:8px}
+.chatSheet .csHead .link.sm{font-size:12px;padding:4px 6px;color:var(--opp)}
+.watchers{font-size:9.5px;font-weight:800;color:var(--gold);white-space:nowrap;margin-top:1px}
+
+/* ---------- watching a friend ---------- */
+.watch{gap:12px;padding-bottom:20px;min-height:100dvh}
+.wHead{display:flex;align-items:center;gap:10px;padding-top:6px}
+.wEye{font-size:26px}
+.wTitle{flex:1;min-width:0;display:flex;flex-direction:column;text-align:left}
+.wTitle small{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:800}
+.wTitle b{font-family:var(--display);font-weight:400;font-size:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wBoard{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px 10px}
+.wBoard .rounds{grid-row:2}
+.wSide{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.wSide b{font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wSide.a b{color:var(--you)}.wSide.b b{color:var(--opp)}
+.wPts{font-family:var(--display);font-size:34px;line-height:1}
+.wSide.a .wPts{color:var(--you);text-shadow:0 3px 0 var(--youD)}
+.wSide.b .wPts{color:var(--opp);text-shadow:0 3px 0 var(--oppD)}
+.wMid{display:flex;flex-direction:column;align-items:center;line-height:1.1}
+.wMid small{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:1px}
+.wMid b{font-family:var(--display);font-weight:400;font-size:30px;color:var(--gold)}
+.wArena{display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:10px;padding-top:6px}
+.wSlotWrap{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:0}
+.wSlotWrap .slot{width:clamp(88px,28vw,130px)}
+.wSlotWrap small{font-size:12px;color:var(--muted);font-weight:700;min-height:15px}
+.wTimer{align-self:center;margin-top:-30px;width:56px;height:56px;border-radius:50%;background:rgba(8,6,28,.5);border:2px solid var(--line2);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:22px;color:var(--gold)}
+.wBacks{display:flex;flex-wrap:wrap;justify-content:center;max-width:150px;gap:2px 0}
+.wBacks .ob{width:18px;height:26px;margin:0 -2px;--r:0deg;--y:0px}
+.wMsg{min-height:22px;text-align:center;font-weight:700;font-size:15px}
+.wNote{font-size:12px;text-align:center}
+#scrWatch.idle .wBoard,#scrWatch.idle .wArena{opacity:.35}
+.friendsModal .row input{text-align:left;font-family:var(--body);font-size:16px;letter-spacing:0;text-transform:none}

@@ -22,4 +22,8 @@ export default __t.row({
   practiceDone: __t.bool().name("practice_done"),
   waiting: __t.string(),
   roomCode: __t.string().name("room_code"),
+  avatar: __t.string(),
+  frame: __t.string(),
+  skin: __t.string(),
+  watching: __t.string(),
 });

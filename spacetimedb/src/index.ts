@@ -24,6 +24,13 @@ const HISTORY_KEEP = 20;         // matches kept in each player's history
 const GOLD = 1200, DIAMOND = 1350;
 const DAILY_STAT_KEEP_DAYS = 3;
 
+// looks: keep in step with AVATARS, FRAMES and SKINS in src/social.ts
+const AVATARS = ['😎', '🤖', '🦊', '🐼', '🐯', '🦁', '🐸', '🐙', '🦄', '🐲', '👻', '👽', '🤠', '🥷', '🧙', '🧛', '🐵', '🐧', '🦈', '🌵', '🍕', '⚡', '🌙', '🔥'];
+const FRAME_UNLOCK: Record<string, string> = { '': '', rookie: 'first_win', fire: 'streak5', gold: 'gold', diamond: 'diamond', daily: 'daily7' };
+const SKINS = ['classic', 'neon', 'wood', 'pixel'];
+const FRIENDS_MAX = 100;
+const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
+
 // chat: only these emoji and phrases can be sent, so there is no free typing between strangers.
 // Keep both lists in step with EMOJIS and PHRASES in src/main.ts.
 const EMOJIS = ['👍', '😂', '😎', '😮', '😤', '😭', '🔥', '👏', '🤝', '🤔', '😈', '🙈', '🪨', '📄', '✂️', '🤞', '🎁', '😇'];
@@ -299,9 +306,59 @@ const dailyStat = table(
   { day: t.u32().primaryKey(), plays: t.u32(), wins: t.u32(), board: t.u8().index('btree') }
 );
 
+// How a player shows up to others: emoji avatar, avatar frame and card skin.
+const look = table(
+  { name: 'look' },
+  { identity: t.identity().primaryKey(), avatar: t.string(), frame: t.string(), skin: t.string() }
+);
+
+// Friendships, two rows each: owner's view of other. 'out' = owner asked, 'in' = other asked, 'friends'.
+const friend = table(
+  { name: 'friend' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity().index('btree'),
+    other: t.identity().index('btree'),
+    state: t.string(),
+    at: t.timestamp(),
+  }
+);
+
+// "Come play": a friend's invitation into their room. Disappears when the room closes.
+const invite = table(
+  { name: 'invite' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    from: t.identity().index('btree'),
+    to: t.identity().index('btree'),
+    code: t.string(),
+    at: t.timestamp(),
+  }
+);
+
+// Player reports, for you to review (see README).
+const report = table(
+  { name: 'report' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    reporter: t.identity().index('btree'),
+    reported: t.identity(),
+    reportedName: t.string(),
+    gameId: t.u64(),
+    reason: t.string(),
+    at: t.timestamp(),
+  }
+);
+
+// Someone watching a friend's matches. Follows the friend from match to match.
+const watcher = table(
+  { name: 'watcher' },
+  { identity: t.identity().primaryKey(), target: t.identity().index('btree'), since: t.timestamp() }
+);
+
 const spacetimedb = schema({
   player, game, handCard, roundLog, gameTimer, queueEntry, queueTimer, room, pairStat, ladder, matchResult, rngState, sweepTimer, transfer, chatMsg,
-  stats, history, achievement, season, dailyStat,
+  stats, history, achievement, season, dailyStat, look, friend, invite, report, watcher,
 });
 export default spacetimedb;
 
@@ -426,6 +483,12 @@ function dropProgress(ctx: Ctx, who: Identity) {
   ctx.db.stats.identity.delete(who);
   for (const h of Array.from(ctx.db.history.identity.filter(who))) ctx.db.history.id.delete(h.id);
   for (const x of Array.from(ctx.db.achievement.identity.filter(who))) ctx.db.achievement.id.delete(x.id);
+  ctx.db.look.identity.delete(who);
+  ctx.db.watcher.identity.delete(who);
+  for (const f of Array.from(ctx.db.friend.owner.filter(who))) ctx.db.friend.id.delete(f.id);
+  for (const f of Array.from(ctx.db.friend.other.filter(who))) ctx.db.friend.id.delete(f.id);
+  for (const i of Array.from(ctx.db.invite.from.filter(who))) ctx.db.invite.id.delete(i.id);
+  for (const i of Array.from(ctx.db.invite.to.filter(who))) ctx.db.invite.id.delete(i.id);
 }
 function bumpDaily(ctx: Ctx, day: number, plays: number, wins: number) {
   const row = ctx.db.dailyStat.day.find(day);
@@ -546,6 +609,7 @@ function startGame(ctx: Ctx, a: PlayerRow, b: PlayerRow | undefined, mode: strin
   }
   for (const p of b ? [a, b] : [a]) {
     ctx.db.player.identity.update({ ...p, gameId: g.id, waiting: '', roomCode: '' });
+    ctx.db.watcher.identity.delete(p.identity); // playing now, not watching
   }
   setPhase(ctx, g, 'prep', TIMES.prep);
   if (g.p1Bot) addTimer(ctx, g, 'botReady', 3000 + rng(6000));
@@ -746,9 +810,11 @@ function dequeue(ctx: Ctx, who: Identity) {
 }
 function closeOwnRoom(ctx: Ctx, p: PlayerRow) {
   if (p.roomCode) ctx.db.room.code.delete(p.roomCode);
+  for (const i of Array.from(ctx.db.invite.from.filter(p.identity))) ctx.db.invite.id.delete(i.id);
 }
 /** Clears whatever the player was waiting for. Returns the updated row (already saved). */
 function stopWaiting(ctx: Ctx, p: PlayerRow): PlayerRow {
+  ctx.db.watcher.identity.delete(p.identity);
   dequeue(ctx, p.identity);
   closeOwnRoom(ctx, p);
   if (p.waiting === '' && p.roomCode === '') return p;
@@ -846,6 +912,11 @@ export const claimTransfer = spacetimedb.reducer({ code: t.string() }, (ctx, { c
   if (gs) { ctx.db.stats.identity.delete(gs.identity); ctx.db.stats.insert({ ...gs, identity: p.identity }); }
   for (const h of Array.from(ctx.db.history.identity.filter(guest.identity))) ctx.db.history.id.update({ ...h, identity: p.identity });
   for (const x of Array.from(ctx.db.achievement.identity.filter(guest.identity))) ctx.db.achievement.id.update({ ...x, identity: p.identity });
+  const gl = ctx.db.look.identity.find(guest.identity);
+  if (gl) { ctx.db.look.identity.delete(gl.identity); ctx.db.look.insert({ ...gl, identity: p.identity }); }
+  for (const f of Array.from(ctx.db.friend.owner.filter(guest.identity))) ctx.db.friend.id.update({ ...f, owner: p.identity });
+  for (const f of Array.from(ctx.db.friend.other.filter(guest.identity))) ctx.db.friend.id.update({ ...f, other: p.identity });
+  ctx.db.watcher.identity.delete(guest.identity);
   ctx.db.player.identity.update({
     ...p, wins: guest.wins, losses: guest.losses, draws: guest.draws,
     tutorialDone: p.tutorialDone || guest.tutorialDone, practiceDone: guest.practiceDone,
@@ -901,9 +972,13 @@ export const leaveQueue = spacetimedb.reducer(ctx => {
 });
 
 export const createRoom = spacetimedb.reducer(ctx => {
-  let p = me(ctx);
+  const p = me(ctx);
   assertFree(ctx, p);
-  p = stopWaiting(ctx, p);
+  openRoom(ctx, stopWaiting(ctx, p));
+});
+
+/** Opens a friend room for p (who is free and not waiting) and returns its code. */
+function openRoom(ctx: Ctx, p: PlayerRow): string {
   const rng = secretRng(ctx);
   const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I mix-ups
   let code = '';
@@ -912,7 +987,8 @@ export const createRoom = spacetimedb.reducer(ctx => {
   } while (ctx.db.room.code.find(code));
   ctx.db.room.insert({ code, host: p.identity });
   ctx.db.player.identity.update({ ...p, waiting: 'room', roomCode: code, gameId: 0n });
-});
+  return code;
+}
 
 export const closeRoom = spacetimedb.reducer(ctx => {
   stopWaiting(ctx, me(ctx));
@@ -1023,6 +1099,140 @@ export const sendChat = spacetimedb.reducer({ kind: t.string(), body: t.string()
   postChat(ctx, g.id, seat, kind, body);
 });
 
+// ---------- looks, friends, invites, reports, watching ----------
+const lookOf = (ctx: Ctx, who: Identity) => ctx.db.look.identity.find(who) ?? { identity: who, avatar: '', frame: '', skin: 'classic' };
+function hasAch(ctx: Ctx, who: Identity, key: string) {
+  for (const a of ctx.db.achievement.identity.filter(who)) if (a.key === key) return true;
+  return false;
+}
+
+/** Changes your avatar, frame and card skin. Frames and skins have to be unlocked first. */
+export const setLook = spacetimedb.reducer({ avatar: t.string(), frame: t.string(), skin: t.string() }, (ctx, { avatar, frame, skin }) => {
+  const p = me(ctx);
+  if (avatar !== '' && !AVATARS.includes(avatar)) throw new SenderError('Pick one of the avatars');
+  if (!(frame in FRAME_UNLOCK)) throw new SenderError('Unknown frame');
+  if (FRAME_UNLOCK[frame] && !hasAch(ctx, p.identity, FRAME_UNLOCK[frame]!)) throw new SenderError('That frame is still locked');
+  if (!SKINS.includes(skin)) throw new SenderError('Unknown card style');
+  const played = p.wins + p.losses + p.draws;
+  const achCount = Array.from(ctx.db.achievement.identity.filter(p.identity)).length;
+  if ((skin === 'neon' && played < 10) || (skin === 'wood' && p.wins < 15) || (skin === 'pixel' && achCount < 5)) {
+    throw new SenderError('That card style is still locked');
+  }
+  const row = { identity: p.identity, avatar, frame, skin };
+  if (ctx.db.look.identity.find(p.identity)) ctx.db.look.identity.update(row); else ctx.db.look.insert(row);
+});
+
+function relation(ctx: Ctx, owner: Identity, other: Identity) {
+  for (const f of ctx.db.friend.owner.filter(owner)) if (f.other.isEqual(other)) return f;
+  return undefined;
+}
+function befriend(ctx: Ctx, p: PlayerRow, o: PlayerRow) {
+  if (o.identity.isEqual(p.identity)) throw new SenderError("That's you!");
+  const mine = relation(ctx, p.identity, o.identity);
+  if (mine) {
+    if (mine.state === 'friends') throw new SenderError(`You and ${o.name} are already friends`);
+    if (mine.state === 'out') throw new SenderError(`Friend request already sent to ${o.name}`);
+    // they already asked: this accepts
+    ctx.db.friend.id.update({ ...mine, state: 'friends', at: ctx.timestamp });
+    const theirs = relation(ctx, o.identity, p.identity);
+    if (theirs) ctx.db.friend.id.update({ ...theirs, state: 'friends', at: ctx.timestamp });
+    return;
+  }
+  if (Array.from(ctx.db.friend.owner.filter(p.identity)).length >= FRIENDS_MAX) throw new SenderError('Your friends list is full');
+  if (Array.from(ctx.db.friend.owner.filter(o.identity)).length >= FRIENDS_MAX) throw new SenderError(`${o.name}'s friends list is full`);
+  ctx.db.friend.insert({ id: 0n, owner: p.identity, other: o.identity, state: 'out', at: ctx.timestamp });
+  ctx.db.friend.insert({ id: 0n, owner: o.identity, other: p.identity, state: 'in', at: ctx.timestamp });
+}
+/** The other person in your current or just-finished match. */
+function opponentOf(ctx: Ctx, p: PlayerRow): { g: GameRow; o: PlayerRow } {
+  const g = p.gameId === 0n ? undefined : ctx.db.game.id.find(p.gameId);
+  const seat = g ? seatOf(g, p.identity) : -1;
+  if (!g || seat === -1 || g.p1Bot) throw new SenderError('There is no opponent to do that with');
+  const o = ctx.db.player.identity.find(seat === 0 ? g.p1 : g.p0);
+  if (!o) throw new SenderError('That player is no longer around');
+  return { g, o };
+}
+
+/** Sends a friend request by username (or accepts theirs, if they asked first). */
+export const addFriend = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+  const p = me(ctx);
+  const o = ctx.db.player.nameKey.find(name.trim().toLowerCase());
+  if (!o) throw new SenderError('No player with that name');
+  befriend(ctx, p, o);
+});
+
+/** Sends a friend request to the person you're playing or just played. */
+export const addOpponent = spacetimedb.reducer(ctx => {
+  const p = me(ctx);
+  befriend(ctx, p, opponentOf(ctx, p).o);
+});
+
+export const acceptFriend = spacetimedb.reducer({ other: t.identity() }, (ctx, { other }) => {
+  const p = me(ctx);
+  const mine = relation(ctx, p.identity, other);
+  if (!mine || mine.state !== 'in') return;
+  const o = ctx.db.player.identity.find(other);
+  if (o) befriend(ctx, p, o);
+});
+
+/** Declines a request, cancels yours, or removes a friend. */
+export const removeFriend = spacetimedb.reducer({ other: t.identity() }, (ctx, { other }) => {
+  const p = me(ctx);
+  const a = relation(ctx, p.identity, other), b = relation(ctx, other, p.identity);
+  if (a) ctx.db.friend.id.delete(a.id);
+  if (b) ctx.db.friend.id.delete(b.id);
+  if (ctx.db.watcher.identity.find(p.identity)?.target.isEqual(other)) ctx.db.watcher.identity.delete(p.identity);
+  if (ctx.db.watcher.identity.find(other)?.target.isEqual(p.identity)) ctx.db.watcher.identity.delete(other);
+  for (const i of Array.from(ctx.db.invite.from.filter(p.identity))) if (i.to.isEqual(other)) ctx.db.invite.id.delete(i.id);
+  for (const i of Array.from(ctx.db.invite.from.filter(other))) if (i.to.isEqual(p.identity)) ctx.db.invite.id.delete(i.id);
+});
+
+/** Invites a friend into your room (opening one if you aren't in one yet). */
+export const inviteFriend = spacetimedb.reducer({ other: t.identity() }, (ctx, { other }) => {
+  let p = me(ctx);
+  assertFree(ctx, p);
+  const f = relation(ctx, p.identity, other);
+  if (!f || f.state !== 'friends') throw new SenderError('You can only invite friends');
+  const o = ctx.db.player.identity.find(other);
+  if (!o || o.conns === 0) throw new SenderError('Your friend is offline');
+  let code = p.waiting === 'room' && p.roomCode && ctx.db.room.code.find(p.roomCode) ? p.roomCode : '';
+  if (!code) { p = stopWaiting(ctx, p); code = openRoom(ctx, p); }
+  for (const i of Array.from(ctx.db.invite.from.filter(p.identity))) if (i.to.isEqual(other)) ctx.db.invite.id.delete(i.id);
+  ctx.db.invite.insert({ id: 0n, from: p.identity, to: other, code, at: ctx.timestamp });
+});
+
+export const dismissInvite = spacetimedb.reducer({ id: t.u64() }, (ctx, { id }) => {
+  const i = ctx.db.invite.id.find(id);
+  if (i && i.to.isEqual(ctx.sender)) ctx.db.invite.id.delete(id);
+});
+
+/** Reports the person you're playing or just played. One report per match. */
+export const reportPlayer = spacetimedb.reducer({ reason: t.string() }, (ctx, { reason }) => {
+  const p = me(ctx);
+  if (!REPORT_REASONS.includes(reason)) throw new SenderError('Pick a reason');
+  const { g, o } = opponentOf(ctx, p);
+  for (const r of ctx.db.report.reporter.filter(p.identity)) if (r.gameId === g.id) throw new SenderError('You already reported this player');
+  ctx.db.report.insert({ id: 0n, reporter: p.identity, reported: o.identity, reportedName: o.name, gameId: g.id, reason, at: ctx.timestamp });
+});
+
+/** Watches a friend's matches. Only what both players can already see is shown; never anyone's hand. */
+export const watchFriend = spacetimedb.reducer({ other: t.identity() }, (ctx, { other }) => {
+  let p = me(ctx);
+  assertFree(ctx, p);
+  const f = relation(ctx, p.identity, other);
+  if (!f || f.state !== 'friends') throw new SenderError('You can only watch friends');
+  const o = ctx.db.player.identity.find(other);
+  if (!o || !liveGame(ctx, o)) throw new SenderError('Your friend is not in a match right now');
+  p = stopWaiting(ctx, p);
+  if (p.gameId !== 0n) ctx.db.player.identity.update({ ...p, gameId: 0n }); // leave any end screen
+  ctx.db.watcher.identity.delete(p.identity);
+  ctx.db.watcher.insert({ identity: p.identity, target: other, since: ctx.timestamp });
+});
+
+export const stopWatching = spacetimedb.reducer(ctx => {
+  ctx.db.watcher.identity.delete(ctx.sender);
+});
+
 /** Leaves a finished game's end screen. */
 export const leaveGame = spacetimedb.reducer(ctx => {
   const p = me(ctx);
@@ -1066,6 +1276,7 @@ export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   p = { ...p, conns: p.conns > 0 ? p.conns - 1 : 0, lastSeen: ctx.timestamp };
   ctx.db.player.identity.update(p);
   if (p.conns > 0) return; // still open in another tab
+  ctx.db.watcher.identity.delete(p.identity);
   p = stopWaiting(ctx, p);
   const g = liveGame(ctx, p);
   if (!g) return;
@@ -1112,6 +1323,10 @@ const meRow = t.row('Me', {
   practiceDone: t.bool(),
   waiting: t.string(),
   roomCode: t.string(),
+  avatar: t.string(),
+  frame: t.string(),
+  skin: t.string(),
+  watching: t.string(),   // the friend you're watching, '' if none
 });
 
 export const myPlayer = spacetimedb.view({ name: 'my_player', public: true }, t.array(meRow), ctx => {
@@ -1120,8 +1335,15 @@ export const myPlayer = spacetimedb.view({ name: 'my_player', public: true }, t.
   return [{
     identity: p.identity, name: p.name, isGuest: p.isGuest, rating: p.rating, wins: p.wins, losses: p.losses, draws: p.draws,
     tutorialDone: p.tutorialDone, practiceDone: p.practiceDone, waiting: p.waiting, roomCode: p.roomCode,
+    ...lookFields(ctx, p.identity),
+    watching: (() => { const w = ctx.db.watcher.identity.find(p.identity); return w ? ctx.db.player.identity.find(w.target)?.name ?? '' : ''; })(),
   }];
 });
+
+function lookFields(ctx: any, who: Identity) {
+  const l = ctx.db.look.identity.find(who);
+  return { avatar: l ? l.avatar : '', frame: l ? l.frame : '', skin: l ? l.skin : 'classic' };
+}
 
 const transferRow = t.row('TransferCode', { code: t.string() });
 
@@ -1166,6 +1388,11 @@ const gameViewRow = t.row('GameView', {
   oppRematch: t.bool(),       // end screen: your opponent has asked for one
   oppLeft: t.bool(),          // end screen: your opponent has left, so no rematch
   oppRating: t.i32(),         // 0 for a bot
+  oppAvatar: t.string(),
+  oppFrame: t.string(),
+  oppSkin: t.string(),
+  oppFriend: t.string(),      // '' | 'out' | 'in' | 'friends'
+  watchers: t.u32(),          // friends watching this match
 });
 
 const result = (winner: number, seat: number) => (winner === -1 ? 'draw' : winner === seat ? 'win' : 'loss');
@@ -1202,6 +1429,9 @@ export const myGame = spacetimedb.view({ name: 'my_game', public: true }, t.arra
     oppRematch: g.over && (you ? g.rematch1 : g.rematch0),
     oppLeft: g.over && !oppStillHere(ctx as any, g, seat),
     oppRating: g.p1Bot ? 0 : (ctx.db.player.identity.find(you ? g.p1 : g.p0)?.rating ?? 0),
+    ...(g.p1Bot ? { oppAvatar: '🤖', oppFrame: '', oppSkin: 'classic' } : (({ avatar, frame, skin }) => ({ oppAvatar: avatar, oppFrame: frame, oppSkin: skin }))(lookFields(ctx, you ? g.p1 : g.p0))),
+    oppFriend: g.p1Bot ? '' : (() => { for (const f of ctx.db.friend.owner.filter(ctx.sender)) if (f.other.isEqual(you ? g.p1 : g.p0)) return f.state; return ''; })(),
+    watchers: Array.from(ctx.db.watcher.target.filter(g.p0)).length + (g.p1Bot ? 0 : Array.from(ctx.db.watcher.target.filter(g.p1)).length),
   }];
 });
 
@@ -1245,14 +1475,14 @@ export const myLog = spacetimedb.view({ name: 'my_log', public: true }, t.array(
   }));
 });
 
-const leaderRow = t.row('LeaderRow', { identity: t.identity(), name: t.string(), rating: t.i32() });
+const leaderRow = t.row('LeaderRow', { identity: t.identity(), name: t.string(), rating: t.i32(), avatar: t.string(), frame: t.string() });
 
 // Same for everyone, so Spacetime computes it once and shares it.
 export const leaderboard = spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(leaderRow), ctx => {
   return Array.from(ctx.db.ladder.board.filter(0))
     .sort((a, b) => b.rating - a.rating)
     .slice(0, 10)
-    .map(l => ({ identity: l.identity, name: l.name, rating: l.rating }));
+    .map(l => { const k = lookFields(ctx, l.identity); return { identity: l.identity, name: l.name, rating: l.rating, avatar: k.avatar, frame: k.frame }; });
 });
 
 const statsViewRow = t.row('StatsView', {
@@ -1299,4 +1529,93 @@ const dailyViewRow = t.row('DailyView', { day: t.u32(), plays: t.u32(), wins: t.
 /** How many played and beat the last few daily challenges. */
 export const dailyStats = spacetimedb.anonymousView({ name: 'daily_stats', public: true }, t.array(dailyViewRow), ctx => {
   return Array.from(ctx.db.dailyStat.board.filter(0), d => ({ day: d.day, plays: d.plays, wins: d.wins }));
+});
+
+const friendViewRow = t.row('FriendView', {
+  identity: t.identity(), name: t.string(), state: t.string(), online: t.bool(), playing: t.bool(),
+  rating: t.i32(), avatar: t.string(), frame: t.string(),
+});
+
+/** Your friends and friend requests, with who is online or mid-match. */
+export const myFriends = spacetimedb.view({ name: 'my_friends', public: true }, t.array(friendViewRow), ctx => {
+  const out: any[] = [];
+  for (const f of ctx.db.friend.owner.filter(ctx.sender)) {
+    const o = ctx.db.player.identity.find(f.other);
+    if (!o) continue;
+    const g = f.state === 'friends' && o.gameId !== 0n ? ctx.db.game.id.find(o.gameId) : undefined;
+    const k = lookFields(ctx, o.identity);
+    out.push({
+      identity: o.identity, name: o.name, state: f.state, online: f.state === 'friends' && o.conns > 0,
+      playing: !!g && !g.over, rating: o.rating, avatar: k.avatar, frame: k.frame,
+    });
+  }
+  return out;
+});
+
+const inviteViewRow = t.row('InviteView', { id: t.u64(), fromName: t.string(), avatar: t.string(), code: t.string() });
+
+/** Friends inviting you into their room right now. */
+export const myInvites = spacetimedb.view({ name: 'my_invites', public: true }, t.array(inviteViewRow), ctx => {
+  const out: any[] = [];
+  for (const i of ctx.db.invite.to.filter(ctx.sender)) {
+    const r = ctx.db.room.code.find(i.code);
+    const from = ctx.db.player.identity.find(i.from);
+    if (!r || !from || !r.host.isEqual(i.from)) continue;
+    out.push({ id: i.id, fromName: from.name, avatar: lookFields(ctx, i.from).avatar, code: i.code });
+  }
+  return out;
+});
+
+const watchViewRow = t.row('WatchView', {
+  gameId: t.u64(), mode: t.string(), phase: t.string(), seq: t.u32(), deadline: t.timestamp(), phaseMs: t.u32(),
+  round: t.u32(), totalRounds: t.u32(),
+  aName: t.string(), aScore: t.u32(), aCards: t.u32(), aLocked: t.bool(), aAvatar: t.string(), aSkin: t.string(), aRating: t.i32(),
+  bName: t.string(), bScore: t.u32(), bCards: t.u32(), bLocked: t.bool(), bAvatar: t.string(), bSkin: t.string(), bRating: t.i32(), bIsBot: t.bool(),
+  revealShown: t.bool(), revealA: t.i8(), revealB: t.i8(), revealResult: t.string(),
+  over: t.bool(), endResult: t.string(), endReason: t.string(),
+});
+/** The game the friend you're watching is in, from their side ("a"), and the seat they're in. */
+function watchedGame(ctx: any): { g: GameRow; seat: 0 | 1 } | undefined {
+  const w = ctx.db.watcher.identity.find(ctx.sender);
+  if (!w) return undefined;
+  const target = ctx.db.player.identity.find(w.target);
+  if (!target || target.gameId === 0n) return undefined;
+  const g = ctx.db.game.id.find(target.gameId);
+  if (!g) return undefined;
+  const seat = seatOf(g, target.identity);
+  return seat === -1 ? undefined : { g, seat };
+}
+
+/** The match of the friend you're watching. Only public information: scores, card counts and revealed cards. */
+export const watchGame = spacetimedb.view({ name: 'watch_game', public: true }, t.array(watchViewRow), ctx => {
+  const w = watchedGame(ctx);
+  if (!w) return [];
+  const { g, seat } = w;
+  const a = seat === 0;
+  let c0 = 0, c1 = 0;
+  for (const c of ctx.db.handCard.gameId.filter(g.id)) if (c.seat === 0) c0++; else c1++;
+  const shown = (g.phase === 'reveal' || g.phase === 'result') && g.last0 !== NONE;
+  const la = lookFields(ctx, a ? g.p0 : g.p1);
+  const lb = g.p1Bot ? { avatar: '🤖', skin: 'classic' } : lookFields(ctx, a ? g.p1 : g.p0);
+  const rating = (who: Identity) => ctx.db.player.identity.find(who)?.rating ?? 0;
+  return [{
+    gameId: g.id, mode: g.mode, phase: g.phase, seq: g.seq, deadline: g.deadline, phaseMs: g.phaseMs, round: g.round, totalRounds: ROUNDS,
+    aName: a ? g.name0 : g.name1, aScore: a ? g.score0 : g.score1, aCards: a ? c0 : c1, aLocked: g.phase === 'pick' && (a ? g.lock0 : g.lock1),
+    aAvatar: la.avatar, aSkin: la.skin, aRating: rating(a ? g.p0 : g.p1),
+    bName: a ? g.name1 : g.name0, bScore: a ? g.score1 : g.score0, bCards: a ? c1 : c0, bLocked: g.phase === 'pick' && (a ? g.lock1 : g.lock0),
+    bAvatar: lb.avatar, bSkin: lb.skin, bRating: g.p1Bot ? 0 : rating(a ? g.p1 : g.p0), bIsBot: g.p1Bot,
+    revealShown: shown, revealA: shown ? (a ? g.last0 : g.last1) : NONE, revealB: shown ? (a ? g.last1 : g.last0) : NONE,
+    revealResult: shown && g.phase === 'result' ? result(g.lastWinner, seat) : '',
+    over: g.over, endResult: g.over ? result(g.winner, seat) : '', endReason: g.reason,
+  }];
+});
+
+/** Rounds played so far in the match you're watching. */
+export const watchLog = spacetimedb.view({ name: 'watch_log', public: true }, t.array(logViewRow), ctx => {
+  const w = watchedGame(ctx);
+  if (!w) return [];
+  const { g, seat } = w;
+  return Array.from(ctx.db.roundLog.gameId.filter(g.id), l => ({
+    n: l.n, you: seat === 0 ? l.c0 : l.c1, opp: seat === 0 ? l.c1 : l.c0, result: result(l.winner, seat),
+  }));
 });

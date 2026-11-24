@@ -714,3 +714,128 @@ describe('seasons', () => {
     expect(info.champ).toBe(ra >= rb ? 'alice' : 'bob');
   });
 });
+
+describe('looks', () => {
+  it('lets a player pick an avatar, and keeps locked frames and card styles locked', () => {
+    const { test, client } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.setLook, { avatar: '🦊', frame: '', skin: 'classic' });
+    expect(a.me()).toMatchObject({ avatar: '🦊', frame: '', skin: 'classic' });
+    expect(() => a.call(mod.setLook, { avatar: 'hello', frame: '', skin: 'classic' })).toThrow('Pick one of the avatars');
+    expect(() => a.call(mod.setLook, { avatar: '🦊', frame: 'gold', skin: 'classic' })).toThrow('frame is still locked');
+    expect(() => a.call(mod.setLook, { avatar: '🦊', frame: '', skin: 'neon' })).toThrow('card style is still locked');
+    expect(() => a.call(mod.setLook, { avatar: '🦊', frame: 'nope', skin: 'classic' })).toThrow('Unknown frame');
+    // the opponent sees it
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    expect(b.game()).toMatchObject({ oppAvatar: '🦊', oppSkin: 'classic' });
+    expect(a.game()).toMatchObject({ oppAvatar: '', oppSkin: 'classic' });
+    void test;
+  });
+});
+
+describe('friends, invites and reports', () => {
+  const friends = (test: any, c: any) => (mod.myFriends as any)(test.viewContext(c.auth)) as any[];
+  const invites = (test: any, c: any) => (mod.myInvites as any)(test.viewContext(c.auth)) as any[];
+
+  it('sends, accepts and removes friend requests', () => {
+    const { test, client } = setup();
+    const a = client('a'), b = client('b');
+    expect(() => a.call(mod.addFriend, { name: 'nobody_here' })).toThrow('No player');
+    expect(() => a.call(mod.addFriend, { name: a.me().name })).toThrow("That's you");
+    a.call(mod.addFriend, { name: b.me().name.toUpperCase() });
+    expect(friends(test, a)).toMatchObject([{ name: b.me().name, state: 'out', online: false }]);
+    expect(friends(test, b)).toMatchObject([{ name: a.me().name, state: 'in' }]);
+    expect(() => a.call(mod.addFriend, { name: b.me().name })).toThrow('already sent');
+    b.call(mod.acceptFriend, { other: a.me().identity });
+    expect(friends(test, a)).toMatchObject([{ state: 'friends', online: true, playing: false }]);
+    expect(friends(test, b)).toMatchObject([{ state: 'friends' }]);
+    expect(() => b.call(mod.addFriend, { name: a.me().name })).toThrow('already friends');
+    a.call(mod.removeFriend, { other: b.me().identity });
+    expect(friends(test, a)).toEqual([]);
+    expect(friends(test, b)).toEqual([]);
+  });
+
+  it('befriends an opponent from the match, and asking back accepts', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    a.call(mod.addOpponent);
+    expect(b.game().oppFriend).toBe('in');
+    playOut([a, b]);
+    b.call(mod.addOpponent); // on the end screen
+    expect(friends(test, a)[0].state).toBe('friends');
+    expect(a.game().oppFriend).toBe('friends');
+    a.call(mod.leaveGame);
+    a.call(mod.startPractice);
+    expect(() => a.call(mod.addOpponent)).toThrow('no opponent');
+  });
+
+  it('invites a friend into a room, and drops the invite when the room closes', () => {
+    const { test, client } = setup();
+    const a = client('a'), b = client('b'), c = client('c');
+    a.call(mod.addFriend, { name: b.me().name }); b.call(mod.addFriend, { name: a.me().name });
+    expect(() => a.call(mod.inviteFriend, { other: c.me().identity })).toThrow('only invite friends');
+    a.call(mod.inviteFriend, { other: b.me().identity });
+    expect(a.me().waiting).toBe('room');
+    const [inv] = invites(test, b);
+    expect(inv).toMatchObject({ fromName: a.me().name, code: a.me().roomCode });
+    a.call(mod.closeRoom);
+    expect(invites(test, b)).toEqual([]);
+    a.call(mod.inviteFriend, { other: b.me().identity });
+    b.call(mod.joinRoom, { code: invites(test, b)[0].code });
+    expect(a.game().oppName).toBe(b.me().name);
+    expect(invites(test, b)).toEqual([]);
+  });
+
+  it('takes one report per match, about a person', () => {
+    const { test, client } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    expect(() => a.call(mod.reportPlayer, { reason: 'whatever' })).toThrow('Pick a reason');
+    a.call(mod.reportPlayer, { reason: 'Offensive name' });
+    expect(() => a.call(mod.reportPlayer, { reason: 'Other' })).toThrow('already reported');
+    const rows = [...test.db.report.iter()];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ reportedName: b.me().name, reason: 'Offensive name' });
+    a.call(mod.forfeit); a.call(mod.leaveGame);
+    a.call(mod.startPractice);
+    expect(() => a.call(mod.reportPlayer, { reason: 'Other' })).toThrow('no opponent');
+  });
+});
+
+describe('watching a friend', () => {
+  const watch = (test: any, c: any) => (mod.watchGame as any)(test.viewContext(c.auth))[0];
+  it('shows only public information, follows rematches, and stops when the watcher plays', () => {
+    const { test, client, fireNext } = setup();
+    const a = client('a'), b = client('b'), c = client('c');
+    a.call(mod.addFriend, { name: b.me().name }); b.call(mod.addFriend, { name: a.me().name });
+    expect(() => a.call(mod.watchFriend, { other: b.me().identity })).toThrow('not in a match');
+    b.call(mod.startPractice);
+    expect(() => c.call(mod.watchFriend, { other: b.me().identity })).toThrow('only watch friends');
+    a.call(mod.watchFriend, { other: b.me().identity });
+    expect(a.me().watching).toBe(b.me().name);
+    let w = watch(test, a);
+    expect(w).toMatchObject({ aName: b.me().name, bIsBot: true, aCards: 10, bCards: 10, revealShown: false });
+    expect(Object.keys(w).some(k => /hand|sel/i.test(k))).toBe(false); // nobody's cards or picks
+    expect(b.game().watchers).toBe(1);
+    // play a round: the watcher sees the cards only once they are revealed
+    b.call(mod.ready);
+    while (b.game().phase !== 'pick') fireNext();
+    b.call(mod.selectCard, { cardId: b.hand()[0].id }); b.call(mod.lockIn);
+    expect(watch(test, a).revealA).toBe(-2);
+    while (!watch(test, a).revealShown) fireNext();
+    expect(watch(test, a).revealA).toBeGreaterThanOrEqual(0);
+    b.call(mod.forfeit);
+    expect(watch(test, a)).toMatchObject({ over: true, endResult: 'loss' });
+    const old = watch(test, a).gameId;
+    b.call(mod.rematch);
+    expect(watch(test, a).gameId).not.toBe(old); // follows the friend into the next match
+    expect((mod.watchLog as any)(test.viewContext(a.auth))).toEqual([]);
+    a.call(mod.startPractice);
+    expect(a.me().watching).toBe('');
+    expect(b.game().watchers).toBe(0);
+  });
+});

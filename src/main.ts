@@ -7,6 +7,7 @@ import { KINDS, ICON, face, BACK, mini, TROPHY, SKULL, SHAKE, SPEAKER_ON, SPEAKE
 import { sfx, unlock, isMuted, setMuted } from './sfx';
 import { burstAt, confetti, vibrate } from './fx';
 import { drawResultCard } from './card';
+import { AVATARS, FRAMES, SKINS, REPORT_REASONS, avatarHtml } from './social';
 import { tierOf, nextTier, tierBadge, ACHIEVEMENTS, achievementOf, today, msToNextDay, msToSeasonEnd, seasonName, shortTime } from './ranks';
 
 const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'https://maincloud.spacetimedb.com';
@@ -104,6 +105,8 @@ function showError(msg: string) {
   msg = msg.replace(/^.*?Error:\s*/, '');
   if (showing('scrAuth')) $('authErr').textContent = msg;
   else if (!$('friendModal').classList.contains('hide')) $('friendErr').textContent = msg;
+  else if (!$('friendsModal').classList.contains('hide')) $('friendsErr').textContent = msg;
+  else if (!$('lookModal').classList.contains('hide')) $('lookErr').textContent = msg;
   else if (showing('scrLobby')) $('lobbyErr').textContent = msg;
   else toast(msg, 'bad'); // the error spot isn't on screen: show it anyway
 }
@@ -151,7 +154,8 @@ async function connect() {
         .onApplied(() => { if (my === gen) { ready = true; afterConnect(); } })
         .onError(() => { if (my === gen) $('loadMsg').textContent = 'Could not load the game. Refresh to try again.'; })
         .subscribe([tables.myPlayer, tables.myGame, tables.myHand, tables.myLog, tables.myTransfer, tables.leaderboard, tables.myChat,
-          tables.myStats, tables.myHistory, tables.myAchievements, tables.seasonInfo, tables.dailyStats]);
+          tables.myStats, tables.myHistory, tables.myAchievements, tables.seasonInfo, tables.dailyStats,
+          tables.myFriends, tables.myInvites, tables.watchGame, tables.watchLog]);
     })
     .onAutomaticReconnect(() => { if (my === gen) net(null); })
     .onDisconnect(() => { if (my === gen && connected) net('Reconnecting…'); })
@@ -180,7 +184,8 @@ async function connect() {
   let queued = false;
   const changed = () => { if (my === gen && !queued) { queued = true; queueMicrotask(() => { queued = false; if (my === gen) sync(); }); } };
   for (const t of [conn.db.myPlayer, conn.db.myGame, conn.db.myHand, conn.db.myLog, conn.db.myTransfer, conn.db.leaderboard, conn.db.myChat,
-    conn.db.myStats, conn.db.myHistory, conn.db.myAchievements, conn.db.seasonInfo, conn.db.dailyStats] as any[]) {
+    conn.db.myStats, conn.db.myHistory, conn.db.myAchievements, conn.db.seasonInfo, conn.db.dailyStats,
+    conn.db.myFriends, conn.db.myInvites, conn.db.watchGame, conn.db.watchLog] as any[]) {
     t.onInsert(changed); t.onDelete(changed);
     if (typeof t.onUpdate === 'function') t.onUpdate(changed);
   }
@@ -252,7 +257,8 @@ function buildState(gv: any) {
     totalRounds: gv.totalRounds, pickMs: gv.pickMs, phaseMs: gv.phaseMs, rated: gv.rated, ratingChange: gv.ratingChange,
     you: { name: gv.youName, score: gv.youScore, hand, sel: gv.youSel === 0n ? null : String(gv.youSel), ready: gv.youReady,
       locked: gv.youLocked || (gv.phase === 'pick' && lockPending === lockKey) },
-    opp: { name: gv.oppName, isBot: gv.oppIsBot, rating: gv.oppRating, score: gv.oppScore, handCount: gv.oppHandCount, ready: gv.oppReady, placed: gv.oppPlaced, connected: gv.oppConnected },
+    watchers: gv.watchers,
+    opp: { name: gv.oppName, isBot: gv.oppIsBot, rating: gv.oppRating, avatar: gv.oppAvatar, frame: gv.oppFrame, skin: gv.oppSkin, friend: gv.oppFriend, score: gv.oppScore, handCount: gv.oppHandCount, ready: gv.oppReady, placed: gv.oppPlaced, connected: gv.oppConnected },
     reveal: gv.revealShown ? { n: gv.round, you: kindName(gv.revealYou), opp: kindName(gv.revealOpp), result: gv.revealResult || null } : null,
     log,
     ended: gv.over ? { result: gv.endResult, reason: gv.endReason } : null,
@@ -269,6 +275,7 @@ function sync() {
   checkAchievements();
   renderMe();
   renderBoard();
+  renderInvites();
 
   const gv = first(conn.db.myGame.iter());
   if (gv && String(gv.gameId) !== dismissed) {
@@ -277,6 +284,8 @@ function sync() {
     return;
   }
   if (G) leaveGameScreen();
+  if (me.watching) { renderWatch(); return; }
+  if (showing('scrWatch')) toLobby();
 
   if (!me.tutorialDone) {
     if (store.get('rps10_tut')) { if (!skippingTutorial) { skippingTutorial = true; call('finishTutorial'); } } // already seen on this device
@@ -305,7 +314,7 @@ function leaveGameScreen() {
 
 // ---------- account ----------
 const suggestName = (n: string) => n.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
-function closeModals() { for (const id of ['acctModal', 'friendModal', 'confirmLeave', 'statsModal']) $(id).classList.add('hide'); }
+function closeModals() { for (const id of ['acctModal', 'friendModal', 'confirmLeave', 'statsModal', 'lookModal', 'friendsModal', 'reportModal']) $(id).classList.add('hide'); }
 
 /** Guests sign in with Google to get an account. Their progress moves across with a one-time code. */
 async function googleSignIn() {
@@ -380,6 +389,10 @@ function avatar(el: any, name?: string, photo = true) {
   const n = name ?? (me ? me.name : '?');
   el.innerHTML = '';
   el.style.setProperty('--h', String(hue(n)));
+  el.className = el.className.replace(/\s*\b(fr-\S+|hasEmo)\b/g, '');
+  const own = name === undefined && me;
+  if (own && me.frame) el.classList.add('fr-' + me.frame);
+  if (own && me.avatar) { el.classList.add('hasEmo'); el.innerHTML = `<span class="emo">${me.avatar}</span>`; return; }
   if (photo && !name && google && google.photo) {
     const img = document.createElement('img');
     img.src = google.photo; img.alt = ''; img.referrerPolicy = 'no-referrer';
@@ -436,6 +449,7 @@ function renderMe() {
   if (notice) { homeMsg(notice); notice = ''; }
   if (!$('acctModal').classList.contains('hide')) renderAccount();
   if (!$('statsModal').classList.contains('hide')) renderStats();
+  if (!$('lookModal').classList.contains('hide')) renderLook();
 }
 function renderBoard() {
   const top = Array.from(conn.db.leaderboard.iter()).sort((a, b) => b.rating - a.rating);
@@ -688,8 +702,12 @@ function onState(s: any) {
 
 function renderGame(entering: boolean, firstOfGame: boolean) {
   const s = G;
-  $('nameOpp').innerHTML = (s.opp.isBot ? '' : tierBadge(tierOf(s.opp.rating), 'xs')) + esc(s.opp.name);
-  $('nameYou').innerHTML = tierBadge(tierOf(me ? me.rating : 1000), 'xs') + esc(s.you.name);
+  $('nameOpp').innerHTML = (s.opp.isBot ? '' : tierBadge(tierOf(s.opp.rating), 'xs')) + (s.opp.avatar ? s.opp.avatar + ' ' : '') + esc(s.opp.name);
+  $('nameYou').innerHTML = tierBadge(tierOf(me ? me.rating : 1000), 'xs') + (me && me.avatar ? me.avatar + ' ' : '') + esc(s.you.name);
+  const mySkin = (me && me.skin) || 'classic';
+  $('hand').dataset.skin = mySkin; $('slotYou').dataset.skin = mySkin; $('slotOpp').dataset.skin = s.opp.skin || 'classic';
+  $('watchers').textContent = s.watchers ? `👀 ${s.watchers} watching` : '';
+  $('watchers').classList.toggle('hide', !s.watchers);
   $('totalR').textContent = s.totalRounds;
   $('round').textContent = s.round;
   $('oppTag').textContent = s.mode === 'daily' ? 'Daily' : s.opp.isBot ? 'Bot' : 'Opp';
@@ -973,6 +991,7 @@ function renderRematch() {
   // a new opponent only makes sense for online play; practice and friend rooms just rematch or go back
   $('btnAgain').classList.toggle('hide', !(G.mode === 'ranked' || G.mode === 'bot'));
   btn.classList.toggle('hide', G.mode === 'daily'); // one try a day
+  renderFriendBtn();
   if (G.mode === 'daily') { note.textContent = `Next challenge in ${shortTime(msToNextDay())}`; note.className = 'rmNote'; }
 }
 $('btnRematch').onclick = () => {
@@ -1231,6 +1250,223 @@ function bubble(id: string, kind: string, body: string) {
   bubTimers[id] = setTimeout(() => hideBubble(id), kind === 'emoji' ? 2200 : 4000);
 }
 function hideBubble(id: string) { $(id).classList.remove('on'); }
+
+
+// ---------- friends, invites, looks, reports ----------
+/** The end screen's friend button follows the friendship state with this opponent. */
+function renderFriendBtn() {
+  const b = $('btnAddFriend');
+  const person = G && !G.opp.isBot;
+  const st = person ? G.opp.friend : 'friends';
+  b.classList.toggle('hide', !person || st === 'friends');
+  b.disabled = st === 'out';
+  b.textContent = st === 'in' ? `✅ Accept ${G ? G.opp.name : ''}'s friend request` : st === 'out' ? 'Friend request sent' : '➕ Add friend';
+  $('btnReport').classList.toggle('hide', !person || reportedGame === (G && G.gameId));
+}
+$('btnAddFriend').onclick = () => {
+  if (!G) return;
+  const was = G.opp.friend;
+  call('addOpponent').then(ok => { if (ok) toast(was === 'in' ? `You and ${G ? G.opp.name : 'they'} are now friends 🤝` : 'Friend request sent'); });
+};
+
+let reportedGame: string | null = null;
+function openReport() {
+  if (!G || G.opp.isBot) return;
+  $('reportWho').textContent = `What's wrong with ${G.opp.name}?`;
+  $('reportReasons').innerHTML = REPORT_REASONS.map(r => `<button class="btn ghost" data-r="${esc(r)}">${esc(r)}</button>`).join('');
+  $('reportModal').classList.remove('hide');
+}
+$('reportReasons').addEventListener('click', (e: Event) => {
+  const b = (e.target as HTMLElement).closest('button[data-r]') as HTMLElement | null;
+  if (!b || !G) return;
+  const gameId = G.gameId;
+  $('reportModal').classList.add('hide');
+  call('reportPlayer', { reason: b.dataset.r }).then(ok => {
+    if (!ok) return;
+    reportedGame = gameId;
+    if (G) renderFriendBtn();
+    toast('Thanks. Your report was sent.');
+  });
+});
+$('btnReport').onclick = openReport;
+$('chatReport').onclick = () => { showChat(false); openReport(); };
+$('reportClose').onclick = () => $('reportModal').classList.add('hide');
+
+// your look: avatar, frame and card style
+function lookUnlocks() {
+  const achs = new Set(Array.from(conn.db.myAchievements.iter(), a => a.key));
+  return { achs, p: { played: me.wins + me.losses + me.draws, wins: me.wins, ach: achs.size } };
+}
+function renderLook() {
+  const { achs, p } = lookUnlocks();
+  $('lookPreview').innerHTML = avatarHtml(me.name, me.avatar, me.frame, 'lg')
+    + `<div class="lpCards" data-skin="${me.skin || 'classic'}">${['rock', 'paper', 'scissors'].map(k => `<div class="tc">${face(k)}</div>`).join('')}</div>`;
+  $('avGrid').innerHTML = [`<button class="avPick${!me.avatar ? ' on' : ''}" data-av="">${esc(initialOf(me.name))}</button>`]
+    .concat(AVATARS.map(a => `<button class="avPick${me.avatar === a ? ' on' : ''}" data-av="${a}">${a}</button>`)).join('');
+  $('frGrid').innerHTML = FRAMES.map(f => {
+    const open = !f.ach || achs.has(f.ach);
+    return `<button class="frPick${me.frame === f.key ? ' on' : ''}${open ? '' : ' locked'}" data-fr="${f.key}" ${open ? '' : 'disabled'}>`
+      + `${avatarHtml(me.name, me.avatar, f.key, 'sm')}<b>${f.name}</b><small>${open ? (me.frame === f.key ? 'On' : '') : '🔒 ' + f.how}</small></button>`;
+  }).join('');
+  $('skGrid').innerHTML = SKINS.map(k => {
+    const open = k.open(p);
+    return `<button class="skPick${(me.skin || 'classic') === k.key ? ' on' : ''}${open ? '' : ' locked'}" data-sk="${k.key}" ${open ? '' : 'disabled'}>`
+      + `<div class="tc" data-skin="${k.key}">${face('rock')}</div><b>${k.name}</b><small>${open ? '' : '🔒 ' + k.how}</small></button>`;
+  }).join('');
+}
+function saveLook(change: Partial<{ avatar: string; frame: string; skin: string }>) {
+  $('lookErr').textContent = '';
+  const next = { avatar: me.avatar, frame: me.frame, skin: me.skin || 'classic', ...change };
+  call('setLook', next);
+}
+$('avGrid').addEventListener('click', (e: Event) => { const b = (e.target as HTMLElement).closest('[data-av]') as HTMLElement | null; if (b) saveLook({ avatar: b.dataset.av! }); });
+$('frGrid').addEventListener('click', (e: Event) => { const b = (e.target as HTMLElement).closest('[data-fr]') as HTMLElement | null; if (b && !b.hasAttribute('disabled')) saveLook({ frame: b.dataset.fr! }); });
+$('skGrid').addEventListener('click', (e: Event) => { const b = (e.target as HTMLElement).closest('[data-sk]') as HTMLElement | null; if (b && !b.hasAttribute('disabled')) saveLook({ skin: b.dataset.sk! }); });
+$('btnLook').onclick = () => { $('lookErr').textContent = ''; renderLook(); $('lookModal').classList.remove('hide'); };
+$('lookClose').onclick = () => $('lookModal').classList.add('hide');
+
+// friends list
+const STATUS = (f: any) => f.state === 'in' ? 'Wants to be friends' : f.state === 'out' ? 'Request sent' : f.playing ? '🟢 In a match' : f.online ? '🟢 Online' : 'Offline';
+function renderFriends() {
+  const all = Array.from(conn.db.myFriends.iter());
+  const order = (f: any) => (f.state === 'in' ? 0 : f.state === 'friends' ? (f.playing ? 1 : f.online ? 2 : 3) : 4);
+  all.sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+  const busy = !!G && !G.ended;
+  $('friendsList').innerHTML = all.length ? all.map(f => {
+    const id = f.identity.toHexString();
+    let acts = '';
+    if (f.state === 'in') acts = `<button class="mini go" data-act="accept" data-id="${id}">Accept</button><button class="mini" data-act="remove" data-id="${id}">✕</button>`;
+    else if (f.state === 'out') acts = `<button class="mini" data-act="remove" data-id="${id}">Cancel</button>`;
+    else {
+      if (f.playing) acts += `<button class="mini go" data-act="watch" data-id="${id}" ${busy ? 'disabled' : ''}>👀 Watch</button>`;
+      else if (f.online) acts += `<button class="mini go" data-act="invite" data-id="${id}" ${busy ? 'disabled' : ''}>Invite</button>`;
+      acts += `<button class="mini dim" data-act="unfriend" data-id="${id}" data-name="${esc(f.name)}" aria-label="Remove friend">⋯</button>`;
+    }
+    return `<div class="fr ${f.state}${f.online ? ' on' : ''}">${avatarHtml(f.name, f.avatar, f.frame, 'sm')}`
+      + `<div class="frMid"><b>${f.state === 'friends' ? tierBadge(tierOf(f.rating), 'xs') : ''}${esc(f.name)}</b><small>${STATUS(f)}</small></div>${acts}</div>`;
+  }).join('') : '<div class="empty">No friends yet. Add someone by their username.</div>';
+}
+function friendsBadge() {
+  const n = Array.from(conn.db.myFriends.iter()).filter(f => f.state === 'in').length + Number(conn.db.myInvites.count());
+  $('friendsBadge').textContent = n ? String(Math.min(Number(n), 9)) : '';
+}
+$('btnFriends').onclick = () => { $('friendsErr').textContent = ''; renderFriends(); $('friendsModal').classList.remove('hide'); };
+$('friendsClose').onclick = () => $('friendsModal').classList.add('hide');
+$('addFriendForm').onsubmit = (e: Event) => {
+  e.preventDefault();
+  const name = $('addFriendName').value.trim();
+  if (!name) return;
+  $('friendsErr').textContent = '';
+  call('addFriend', { name }).then(ok => { if (ok) { $('addFriendName').value = ''; toast(`Friend request sent to ${name}`); } });
+};
+$('friendsList').addEventListener('click', (e: Event) => {
+  const b = (e.target as HTMLElement).closest('button[data-act]') as HTMLButtonElement | null;
+  if (!b || b.disabled) return;
+  const f = Array.from(conn.db.myFriends.iter()).find(x => x.identity.toHexString() === b.dataset.id);
+  if (!f) return;
+  const other = f.identity;
+  $('friendsErr').textContent = '';
+  switch (b.dataset.act) {
+    case 'accept': call('acceptFriend', { other }).then(ok => ok && toast(`You and ${f.name} are now friends 🤝`)); break;
+    case 'remove': call('removeFriend', { other }); break;
+    case 'unfriend': if (confirm(`Remove ${f.name} from your friends?`)) call('removeFriend', { other }); break;
+    case 'invite':
+      call('inviteFriend', { other }).then(ok => { if (ok) { $('friendsModal').classList.add('hide'); toast(`Invite sent to ${f.name}`); } });
+      break;
+    case 'watch':
+      call('watchFriend', { other }).then(ok => { if (ok) $('friendsModal').classList.add('hide'); });
+      break;
+  }
+});
+
+// invites from friends: a bar in the lobby, and a toast wherever you are
+let invitesSeen: Set<string> | null = null;
+function renderInvites() {
+  const inv = Array.from(conn.db.myInvites.iter());
+  const ids = inv.map(i => String(i.id));
+  if (invitesSeen) for (const i of inv) if (!invitesSeen.has(String(i.id))) { sfx.msg(); vibrate([20, 40, 20]); toast(`${i.avatar || '🎮'} ${i.fromName} invited you to play!`); }
+  invitesSeen = new Set(ids);
+  const bar = $('inviteBar');
+  bar.classList.toggle('hide', !inv.length);
+  bar.innerHTML = inv.slice(0, 3).map(i => `<div class="inv"><span class="invAv">${i.avatar || '🎮'}</span><span class="invTx"><b>${esc(i.fromName)}</b> invited you to a match</span>`
+    + `<button class="mini go" data-join="${esc(i.code)}">Join</button><button class="mini" data-dismiss="${i.id}" aria-label="Dismiss">✕</button></div>`).join('');
+  friendsBadge();
+  if (!$('friendsModal').classList.contains('hide')) renderFriends();
+}
+$('inviteBar').addEventListener('click', async (e: Event) => {
+  const t = e.target as HTMLElement;
+  const join = t.closest('[data-join]') as HTMLElement | null, dis = t.closest('[data-dismiss]') as HTMLElement | null;
+  if (join) { dismissed = null; homeMsg(''); const err = await joinFromLink(join.dataset.join!); if (err) homeMsg(err); }
+  else if (dis) call('dismissInvite', { id: BigInt(dis.dataset.dismiss!) });
+});
+
+// ---------- watching a friend ----------
+let watchKey = '', watchDeadline = 0, watchTick: any = 0, watchSig = '';
+function renderWatch() {
+  if (!showing('scrWatch')) { show('scrWatch'); watchSig = ''; }
+  closeModals();
+  $('wFriend').textContent = me.watching;
+  const w: any = first(conn.db.watchGame.iter());
+  const log = Array.from(conn.db.watchLog.iter()).sort((a, b) => a.n - b.n);
+  if (!w) {
+    $('scrWatch').classList.add('idle');
+    $('wMsg').textContent = `${me.watching} isn't in a match right now. You'll see their next one here.`;
+    return;
+  }
+  $('scrWatch').classList.remove('idle');
+  const key = `${w.gameId}:${w.seq}`;
+  if (key !== watchKey) {
+    watchKey = key;
+    const now = Date.now();
+    watchDeadline = Math.min(now + w.phaseMs, Math.max(now, w.deadline.toDate().getTime()));
+  }
+  $('wAvA').innerHTML = avatarHtml(w.aName, w.aAvatar, '', 'sm');
+  $('wAvB').innerHTML = avatarHtml(w.bName, w.bAvatar, '', 'sm');
+  $('wNameA').innerHTML = tierBadge(tierOf(w.aRating), 'xs') + esc(w.aName);
+  $('wNameB').innerHTML = (w.bIsBot ? '' : tierBadge(tierOf(w.bRating), 'xs')) + esc(w.bName);
+  $('wScoreA').textContent = w.aScore; $('wScoreB').textContent = w.bScore;
+  $('wRound').textContent = w.round;
+  const byRound: Record<number, string> = {};
+  for (const l of log) byRound[l.n] = l.result;
+  $('wStrip').innerHTML = Array.from({ length: w.totalRounds }, (_, i) => {
+    const n = i + 1, r = byRound[n];
+    return `<i class="${r === 'win' ? 'w' : r === 'loss' ? 'l' : r === 'draw' ? 'd' : n === w.round && !w.over ? 'now' : ''}"><b>${n}</b></i>`;
+  }).join('');
+  const backs = (n: number) => Array.from({ length: n }, () => `<span class="ob">${BACK}</span>`).join('');
+  $('wBacksA').innerHTML = backs(w.aCards); $('wBacksB').innerHTML = backs(w.bCards);
+  $('wSlotA').dataset.skin = w.aSkin || 'classic'; $('wSlotB').dataset.skin = w.bSkin || 'classic';
+  const res = w.revealResult;
+  const slot = (id: string, k: number, locked: boolean, win: boolean, lose: boolean) => {
+    const el = $(id);
+    const kind = k >= 0 ? KINDS[k] : null;
+    el.className = 'slot' + (w.revealShown ? (kind ? ' face' : ' miss') : locked ? ' down' : ' empty thinking') + (win ? ' win' : lose ? ' lose' : '');
+    const html = w.revealShown ? (kind ? face(kind) : '<span class="slow">Too<br>slow</span>') : locked ? BACK : '<span class="dots3"><i></i><i></i><i></i></span>';
+    if (el.dataset.c !== html) { el.innerHTML = html; el.dataset.c = html; }
+  };
+  slot('wSlotA', w.revealA, w.aLocked, res === 'win', res === 'loss');
+  slot('wSlotB', w.revealB, w.bLocked, res === 'loss', res === 'win');
+  $('wStA').textContent = w.phase === 'pick' ? (w.aLocked ? 'Locked in ✓' : 'Choosing…') : '';
+  $('wStB').textContent = w.phase === 'pick' ? (w.bLocked ? 'Locked in ✓' : 'Choosing…') : '';
+  const sig = `${w.gameId}:${w.phase}:${w.round}:${res}`;
+  if (sig !== watchSig) {
+    watchSig = sig;
+    if (w.phase === 'result' && res) sfx[res === 'win' ? 'roundWin' : res === 'loss' ? 'roundLose' : 'roundDraw']();
+    if (w.phase === 'reveal') sfx.flip();
+  }
+  $('wMsg').textContent = w.over
+    ? `${w.endResult === 'win' ? `${w.aName} won` : w.endResult === 'loss' ? `${w.bName} won` : "It's a draw"} ${w.aScore}–${w.bScore}${w.endReason === 'points' ? '' : ` (${w.endReason === 'forfeit' ? 'someone left' : 'disconnect'})`}. Waiting for their next match…`
+    : w.phase === 'prep' ? 'Players are arranging their hands…'
+    : w.phase === 'result' ? (res === 'win' ? `${w.aName} takes round ${w.round}!` : res === 'loss' ? `${w.bName} takes round ${w.round}!` : `Round ${w.round} is a draw`)
+    : '';
+  clearInterval(watchTick);
+  const upd = () => {
+    if (!showing('scrWatch')) { clearInterval(watchTick); return; }
+    const ms = Math.max(0, watchDeadline - Date.now());
+    $('wTimer').textContent = w.phase === 'pick' ? String(Math.ceil(ms / 1000)) : w.over ? '🏁' : 'VS';
+  };
+  upd(); watchTick = setInterval(upd, 250);
+}
+$('btnStopWatch').onclick = () => { call('stopWatching'); toLobby(); };
 
 // ---------- keyboard ----------
 document.addEventListener('keydown', e => {
