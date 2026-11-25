@@ -9,6 +9,9 @@ export const config = {
   // Once set, an account requires a Google sign-in from this Firebase project.
   firebaseProjectId: 'rps10-b5833',
 
-  // Accounts that have every card style unlocked, by identity (from the player table). Ekam1:
-  allSkins: ['c20065b074861b3e83e2c2f64434dcf583f4211683462b37eb01b502add43ad2'],
+  // Accounts that have every card style unlocked, by identity (from the player table).
+  allSkins: [
+    'c20065b074861b3e83e2c2f64434dcf583f4211683462b37eb01b502add43ad2', // Ekam1
+    'c2004076ec97424761c09a2cb5a99fc54dc4f598604d6696fade295f1e0594c1', // paper
+  ],
 };
