@@ -1511,3 +1511,9 @@ body.calm *,body.calm *::before,body.calm *::after{animation-duration:.01ms!impo
 @media (min-width:980px){
   .playDock{position:sticky;bottom:0;z-index:3;padding:14px 0 18px;background:linear-gradient(180deg,rgba(10,9,32,0),var(--bg0) 14px);border-radius:0 0 18px 18px}
 }
+/* screens only ever scroll up and down: decorations wider than the phone (like the glow behind your avatar)
+   must never let the page slide sideways */
+html,body{overflow-x:hidden}
+.lobby,.shBody,.sheet,.overlay,#scrGame,.log{overflow-x:hidden}
+.lobby,.shBody{overscroll-behavior-x:none}
+.lobby::before{left:0;right:0;width:auto;transform:none}
