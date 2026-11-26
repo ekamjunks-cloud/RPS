@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.4.1';
+const VERSION = '2.4.2';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = '';
@@ -1476,17 +1476,27 @@ $('btnLeaveYes').onclick = async () => {
   else { dismissed = null; sync(); } // could not exit (e.g. offline): return to the match
 };
 
+/** The Turns panel: one coloured row per round, newest first (design board 29, look A). */
 function renderLog() {
   const log = G.log;
+  const card = (kind: string | null, gone: string | null, auto: boolean) =>
+    kind ? `<span class="tlC">${mini(kind)}${auto ? '<small>auto</small>' : ''}</span>`
+      : gone ? `<span class="tlC lost" title="Lost: too slow">${mini(gone)}<small>lost</small></span>`
+      : '<span class="tlC none" title="Too slow">—</span>';
+  const VERB: Record<string, string> = { win: 'beats', loss: 'loses to', draw: 'ties' };
+  const LABEL: Record<string, string> = { win: 'WIN', loss: 'LOSS', draw: 'DRAW' };
   const html = log.length ? (() => {
-    const lbl: Record<string, string> = { win: 'WIN', loss: 'LOSS', draw: 'DRAW' };
-    let h = `<table><tr><th>#</th><th>You</th><th>${esc(G.opp.name)}</th><th></th></tr>`;
+    let h = `<div class="tlScore"><span>You</span><b class="y">${G.you.score}</b><i>–</i><b class="o">${G.opp.score}</b><span>${esc(G.opp.name)}</span></div>`
+      + `<div class="tlHead"><span>#</span><span class="me">You</span><span></span><span class="op">${esc(G.opp.name)}</span><span></span></div><div class="tlRows">`;
     log.slice().reverse().forEach((r: any, i: number) => {
-      h += `<tr class="${i === 0 ? 'new' : ''}"><td class="n">${r.n}</td><td>${r.you ? mini(r.you) + (r.youAuto ? '<small class="auto">auto</small>' : '') : r.youGone ? `<span class="gone">${mini(r.youGone)}</span>` : '<span class="none">—</span>'}</td><td>${r.opp ? mini(r.opp) + (r.oppAuto ? '<small class="auto">auto</small>' : '') : r.oppGone ? `<span class="gone">${mini(r.oppGone)}</span>` : '<span class="none">—</span>'}</td><td><span class="res ${r.result}">${r.you ? lbl[r.result] : 'MISSED'}</span></td></tr>`;
+      const verb = !r.you || !r.opp ? 'too slow' : VERB[r.result] || 'vs';
+      h += `<div class="tlRow ${r.result}${i === 0 ? ' new' : ''}"><span class="n">${r.n}</span>`
+        + `<span class="me">${card(r.you, r.youGone, r.youAuto)}</span><span class="vb">${verb}</span>`
+        + `<span class="op">${card(r.opp, r.oppGone, r.oppAuto)}</span><span class="res ${r.result}">${LABEL[r.result] || ''}</span></div>`;
     });
-    return h + '</table>';
-  })() : '<div class="empty">No turns yet</div>';
-  $('logCount').textContent = log.length ? `${log.length} played` : '';
+    return h + '</div>';
+  })() : '<div class="empty">No turns yet. Each round shows up here once it\'s revealed.</div>';
+  $('logCount').textContent = log.length ? `${log.length} played · ${Math.max(0, G.totalRounds - log.length)} left` : '';
   $('logBadge').textContent = log.length || '';
   if ($('logBody').dataset.h !== html) { $('logBody').innerHTML = html; $('logBody').dataset.h = html; }
 }

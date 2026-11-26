@@ -1649,3 +1649,30 @@ html,body{overflow-x:hidden}
 /* the two faces of a flipping card fill it exactly (named flF/flB so other styles, like friend rows, can never touch them) */
 .fl>.flF,.fl>.flB{display:block;padding:0;margin:0;background:none;gap:0}
 .fl>.flF>.cf,.fl>.flB>.cb{width:100%;height:100%}
+
+/* ---------- Turns: duel rows (board 29, A) ---------- */
+.tlScore{display:flex;align-items:center;justify-content:center;gap:10px;font-size:13px;font-weight:800;color:#d9d4ff;margin:2px 0 10px}
+.tlScore b{font-family:var(--display);font-weight:400;font-size:26px;line-height:1}
+.tlScore b.y{color:var(--you)}.tlScore b.o{color:var(--opp)}
+.tlScore i{font-style:normal;color:var(--dim)}
+.tlScore span{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tlHead,.tlRow{display:grid;grid-template-columns:26px 1fr 62px 1fr 58px;align-items:center;gap:6px}
+.tlHead{padding:0 10px 6px;font-size:10px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.tlHead span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tlHead .me,.tlRow .me{text-align:right;justify-self:end}
+.tlHead .op,.tlRow .op{justify-self:start}
+.tlRows{display:flex;flex-direction:column;gap:6px}
+.tlRow{padding:7px 10px;border-radius:14px;background:rgba(8,6,28,.45)}
+.tlRow.win{background:rgba(62,230,160,.13)}.tlRow.loss{background:rgba(255,90,122,.13)}.tlRow.draw{background:rgba(255,200,61,.11)}
+.tlRow.new{box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}
+.tlRow .n{font-family:var(--display);font-size:16px;color:var(--muted);text-align:center}
+.tlRow .vb{font-size:11.5px;font-weight:900;color:var(--muted);text-align:center;white-space:nowrap}
+.tlRow .res{justify-self:end}
+.tlC{display:inline-flex;flex-direction:column;align-items:center;gap:1px}
+.tlC .mi{width:32px;height:32px}
+.tlC small{font-size:9px;font-weight:900;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;line-height:1}
+.tlC.lost .mi{opacity:.45;position:relative}
+.tlC.lost .mi::after{content:"";position:absolute;left:-3px;right:-3px;top:50%;height:2px;background:var(--opp);transform:rotate(-24deg)}
+.tlC.lost small{color:var(--opp)}
+.tlC.none{width:32px;height:32px;border-radius:8px;border:2px dashed rgba(255,255,255,.18);justify-content:center;color:var(--dim);font-weight:900}
+@media (min-width:980px){.tlHead,.tlRow{grid-template-columns:22px 1fr 54px 1fr 50px;gap:4px}.tlRow{padding:6px 8px}.tlC .mi{width:28px;height:28px}}

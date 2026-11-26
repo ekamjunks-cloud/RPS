@@ -229,6 +229,8 @@
       </div>
     </div>
 
+    <!-- the dimmer sits just under the Turns panel, inside the match screen, so it never covers the panel -->
+    <div class="logDim" id="logDim"></div>
     <aside class="log">
       <h3><span>Turns</span><span id="logCount"></span><button class="logClose" id="logClose" aria-label="Close">✕</button></h3>
       <div id="logBody"></div>
@@ -238,7 +240,6 @@
 </section>
 
 <div class="net" id="net">Reconnecting…</div>
-<div class="logDim" id="logDim"></div>
 <div class="chatDim" id="chatDim"></div>
 <div class="chatSheet" id="chatSheet" role="dialog" aria-label="Quick chat">
   <div class="csHead">
