@@ -82,6 +82,11 @@ export const sfx = {
   ready: () => notes([[523, 0], [784, 0.07, 0.22]], 'triangle', 0.15),
   banner: () => { noise(0.5, { vol: 0.16, freq: 400, to: 3000, q: 0.7 }); tone(98, 0.5, { type: 'sawtooth', vol: 0.05, slide: 2 }); },
   tick: () => tone(1250, 0.035, { type: 'square', vol: 0.045 }),
+  // "Opponent found": a beep for 3, 2, 1 and a rising "go"
+  count: () => { tone(660, 0.12, { type: 'square', vol: 0.07 }); tone(1320, 0.08, { type: 'triangle', vol: 0.05 }); },
+  go: () => notes([[880, 0, 0.1], [1175, 0.08, 0.1], [1760, 0.16, 0.3]], 'square', 0.08),
+  // both cards slam down face down
+  thud: () => { noise(0.12, { vol: 0.2, freq: 500, q: 0.7, type: 'lowpass' }); tone(110, 0.16, { vol: 0.22, slide: 0.6 }); },
   tickUrgent: () => { tone(1500, 0.06, { type: 'square', vol: 0.08 }); tone(750, 0.06, { type: 'square', vol: 0.04 }); },
   flip: () => noise(0.16, { vol: 0.22, freq: 1800, to: 5000, q: 0.9 }),
   clash: () => { noise(0.3, { vol: 0.32, freq: 900, to: 200, q: 0.6, type: 'lowpass' }); tone(140, 0.32, { vol: 0.35, slide: 0.4 }); },

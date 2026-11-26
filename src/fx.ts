@@ -2,7 +2,7 @@
 // The animation loop only runs while there is something to draw.
 
 type P = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string; rot: number; vr: number;
-  kind: 'spark' | 'confetti' | 'meteor' | 'ring' | 'flash' | 'bolt'; pts?: number[]; delay?: number };
+  kind: 'spark' | 'confetti' | 'meteor' | 'ring' | 'flash' | 'bolt' | 'shard'; pts?: number[]; delay?: number };
 
 const osReduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let reduced = osReduced;
@@ -59,6 +59,15 @@ function loop(t: number) {
       g.addColorStop(0, p.color); g.addColorStop(1, 'rgba(255,140,40,0)');
       c.globalAlpha = Math.min(1, k * 2) * alpha; c.strokeStyle = g; c.lineWidth = p.size; c.lineCap = 'round';
       c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - p.vx * 0.18, p.y - p.vy * 0.18); c.stroke(); continue;
+    }
+    if (p.kind === 'shard') {
+      // a crystal splinter: flies out, slows, tumbles and falls, glinting as it turns
+      p.vx *= 0.97; p.vy = p.vy * 0.97 + 520 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      c.globalAlpha = Math.min(1, k * 2.2) * alpha;
+      c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.scale(1, 0.55 + 0.45 * Math.abs(Math.cos(p.rot * 1.7)));
+      c.fillStyle = p.color; c.beginPath(); c.moveTo(0, -p.size); c.lineTo(p.size * 0.45, p.size * 0.6); c.lineTo(-p.size * 0.5, p.size * 0.35); c.closePath(); c.fill();
+      c.fillStyle = 'rgba(255,255,255,.75)'; c.beginPath(); c.moveTo(0, -p.size); c.lineTo(p.size * 0.12, 0); c.lineTo(-p.size * 0.2, p.size * 0.1); c.closePath(); c.fill();
+      c.restore(); continue;
     }
     if (p.kind === 'spark') { p.vx *= 0.92; p.vy = p.vy * 0.92 + 600 * dt; }
     else { p.vx *= 0.99; p.vy = Math.min(p.vy + 380 * dt, 260); p.vx += Math.sin((p.life + p.rot) * 6) * 8; }
@@ -161,6 +170,20 @@ export function winEffect(kind: string, dim = false) {
         size: 10, color: col, rot: 0, vr: 0, kind: 'ring', delay: 0.35 + i * 0.22 }));
       sparksAt(W / 2, H * 0.38, RAINBOW, 70, 0.3, 1.8);
       break;
+    case 'shatter': {
+      // Diamond rank: a cold flash, a ring of light, then crystal shards burst out and fall
+      const ICE = ['#e6fdff', '#7fe3ff', '#6f7bff', '#d79cff', '#b9f6ff'];
+      const x0 = W / 2, y0 = H * 0.38;
+      parts.push({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 0.5, size: 0, color: '#d9f7ff', rot: 0, vr: 0, kind: 'flash' });
+      parts.push({ x: x0, y: y0, vx: 0, vy: 0, life: 0, max: 1.5, size: 8, color: '#9fe9ff', rot: 0, vr: 0, kind: 'ring', delay: 0.15 });
+      for (let i = 0; i < 70; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 260 + Math.random() * 520;
+        parts.push({ x: x0, y: y0, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, life: 0, max: 0.2 + 1.6 + Math.random() * 0.9,
+          size: 6 + Math.random() * 12, color: ICE[i % ICE.length]!, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 14, kind: 'shard', delay: 0.2 });
+      }
+      sparksAt(x0, y0, ['#ffffff', '#b9f6ff'], 36, 0.2, 1.4);
+      break;
+    }
     default:
       if (!dim) confetti(); else confetti(60);
   }

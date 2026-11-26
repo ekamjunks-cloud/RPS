@@ -1,11 +1,11 @@
 // What every item is called and how it looks. Prices, levels and unlock rules come straight from the
 // server's catalog (spacetimedb/src/catalog.ts), so the two can never disagree.
 import {
-  ITEMS, ITEM, REACTIONS, PHRASES, COINS, REACTION_SLOTS, PHRASE_SLOTS, type Item, type ItemKind,
+  ITEMS, ITEM, REACTIONS, PHRASES, COINS, REACTION_SLOTS, PHRASE_SLOTS, XP, XP_MULT, COIN_MULT, K_STEPS, RANK_LINES, type Item, type ItemKind,
 } from '../spacetimedb/src/catalog';
 import { face } from './art';
 
-export { ITEMS, ITEM, REACTIONS, PHRASES, COINS, REACTION_SLOTS, PHRASE_SLOTS };
+export { ITEMS, ITEM, REACTIONS, PHRASES, COINS, REACTION_SLOTS, PHRASE_SLOTS, XP, XP_MULT, COIN_MULT, K_STEPS, RANK_LINES };
 export type { Item, ItemKind };
 
 /** Level from total XP, the same sum as the server: level n needs 100 + 25 × (n − 1) XP to go up. */
@@ -51,6 +51,7 @@ const NAMES: Record<string, Info> = {
   'aura:sunrise': { name: 'Sunrise', desc: 'Earned: play the daily challenge 7 days in a row.' },
   'aura:gold': { name: 'Gold', desc: 'Earned: reach Gold rank.' },
   'aura:diamond': { name: 'Diamond', desc: 'Earned: reach Diamond rank.' },
+  'aura:silver': { name: 'Silver', desc: 'Earned: reach Silver rank.' },
   'pack:starter': { name: 'Starter', desc: 'Everyone has it.' },
   'pack:goodsport': { name: 'Good sport', desc: 'Well played · Thanks! · Rematch?' },
   'pack:hype': { name: 'Hype', desc: 'Reactions: On fire, Hype, Love, Cool.' },
@@ -65,12 +66,17 @@ const NAMES: Record<string, Info> = {
   'title:grandmaster': { name: 'GRANDMASTER', desc: 'A title under your name.' },
   'title:mythic': { name: 'MYTHIC', desc: 'A title under your name.' },
   'title:legend': { name: 'LEGEND', desc: 'The top title.' },
+  'title:contender': { name: 'CONTENDER', desc: 'Earned: reach Silver rank.' },
+  'title:golden': { name: 'GOLDEN', desc: 'Earned: reach Gold rank.' },
+  'title:diamond': { name: 'DIAMOND', desc: 'Earned: reach Diamond rank.' },
   'back:classic': { name: 'Classic back', desc: 'What your opponent sees.' },
   'back:dots': { name: 'Dots', desc: 'A card back your opponent sees.' },
   'back:stars': { name: 'Stars', desc: 'A card back your opponent sees.' },
   'back:flames': { name: 'Flames', desc: 'A card back your opponent sees.' },
   'back:crown': { name: 'Crown', desc: 'A card back your opponent sees.' },
   'back:goldleaf': { name: 'Gold leaf', desc: 'A card back your opponent sees.' },
+  'back:goldcrest': { name: 'Gold Crest', desc: 'Earned: reach Gold rank. Your opponent sees it.' },
+  'back:prism': { name: 'Prism', desc: 'Earned: reach Diamond rank. Your opponent sees it.' },
   'color:green': { name: 'Green', desc: 'Your phrase tickets.' },
   'color:sky': { name: 'Sky', desc: 'Your phrase tickets.' },
   'color:sunset': { name: 'Sunset', desc: 'Your phrase tickets.' },
@@ -81,6 +87,7 @@ const NAMES: Record<string, Info> = {
   'fx:lightning': { name: 'Lightning', desc: 'Two bolts crack down and the screen flashes.' },
   'fx:meteor': { name: 'Meteor shower', desc: 'Glowing meteors streak across the sky.' },
   'fx:supernova': { name: 'Supernova', desc: 'A white flash, then rainbow shockwaves.' },
+  'fx:shatter': { name: 'Shatter', desc: 'Earned: reach Diamond rank. A crystal flash, then shards burst across the screen.' },
 };
 export const nameOf = (id: string) => NAMES[id]?.name ?? id.split(':')[1] ?? id;
 export const descOf = (id: string) => NAMES[id]?.desc ?? '';
@@ -97,6 +104,7 @@ const AURA_BADGE: Record<string, string> = {
   sunrise: '<svg class="bTop" aria-hidden="true"><use href="#b-sun"/></svg>',
   gold: '<svg class="bTop" aria-hidden="true"><use href="#b-crown"/></svg>',
   diamond: '<svg class="bTop" aria-hidden="true"><use href="#b-gem"/></svg><svg class="bSpark" aria-hidden="true"><use href="#b-spark"/></svg>',
+  silver: '<svg class="bBot rkB" aria-hidden="true" viewBox="0 0 100 100"><use href="#rk-silver"/></svg>',
   ruby: '<i class="stud s1"></i><i class="stud s2"></i><i class="stud s3"></i><i class="stud s4"></i>',
 };
 const AVATAR_KEYS = new Set(['rocky', 'page', 'snip', 'clank', 'ember', 'ace']);
@@ -131,7 +139,8 @@ export const phrasesInPack = (pack: string) => Object.keys(PHRASES).filter(p => 
 /** A title chip, e.g. CARD SHARK. */
 export const titleHtml = (title: string) => (title ? `<span class="ttl tt-${title}">${esc(nameOf('title:' + title))}</span>` : '');
 /** The back of a card in a back style. */
-export const backHtml = (back: string) => `<span class="cb b-${back || 'classic'}"><span class="cbl">10</span></span>`;
+const BACK_EMBLEM: Record<string, string> = { goldcrest: 'gold', prism: 'diamond' };
+export const backHtml = (back: string) => `<span class="cb b-${back || 'classic'}">${BACK_EMBLEM[back] ? `<svg class="cbEm" viewBox="0 0 100 100" aria-hidden="true"><use href="#rk-${BACK_EMBLEM[back]}"/></svg>` : '<span class="cbl">10</span>'}</span>`;
 /** Three cards (rock, paper, scissors) in a card style. */
 export const skinTrio = (skin: string, cls = '') =>
   `<span class="trio ${cls}" data-skin="${skin}">${['rock', 'paper', 'scissors'].map(k => `<span class="tc">${face(k)}</span>`).join('')}</span>`;

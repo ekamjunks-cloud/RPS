@@ -102,8 +102,8 @@
       <button class="hero" id="btnLook" type="button" aria-label="Your profile: open the Locker">
         <span id="meAv"></span>
         <span class="meName" id="meName"></span>
-        <span class="meSub"><span id="tierBadge"></span><span id="meRank"></span><span id="meTitle"></span></span>
       </button>
+      <span class="meSub"><button class="rankChip" id="btnRank" type="button" aria-label="Your rank: see how ranks and rewards work"><span id="tierBadge"></span><span id="meRank"></span><span class="chev" aria-hidden="true">›</span></button><span id="meTitle"></span></span>
       <button class="pnl lvlCard" id="lvlRow" type="button" aria-label="Level road">
         <span class="lvlNum" id="lvlNum">1</span>
         <span class="lvlInfo"><span class="lvlTop"><b>Level <span id="lvlN">1</span></b><small id="lvlXp">0 / 100 XP</small></span><span class="lvlBar"><i id="lvlFill"></i></span><small class="muted" id="lvlNext"></small></span>
@@ -128,11 +128,11 @@
       <div class="lbSpacer"></div>
       <!-- the match type and Play stay pinned above the bottom bar, so they are always on screen -->
       <div class="playDock">
-        <div class="seg modes" id="modes" role="tablist" aria-label="Match type">
-          <button type="button" data-mode="ranked" role="tab">Ranked</button>
-          <button type="button" data-mode="casual" role="tab">Unranked</button>
-          <button type="button" data-mode="friend" role="tab">Friend</button>
-          <button type="button" data-mode="practice" role="tab">Practice</button>
+        <div class="modes4" id="modes" role="tablist" aria-label="Match type">
+          <button type="button" class="m-ranked" data-mode="ranked" role="tab"><span class="mIc" data-icon="mRanked"></span>Ranked<span class="mLock" data-icon="lock"></span></button>
+          <button type="button" class="m-casual" data-mode="casual" role="tab"><span class="mIc" data-icon="mCasual"></span>Unranked<span class="mLock" data-icon="lock"></span></button>
+          <button type="button" class="m-friend" data-mode="friend" role="tab"><span class="mIc" data-icon="mFriend"></span>Friend</button>
+          <button type="button" class="m-practice" data-mode="practice" role="tab"><span class="mIc" data-icon="mBot"></span>Practice</button>
         </div>
         <small class="modeHint" id="modeHint"></small>
         <div class="err" id="lobbyErr"></div>
@@ -256,6 +256,17 @@
 <div class="achPop" id="achPop" role="status" aria-live="polite"></div>
 <div class="banner" id="banner"><div class="bnIn"><div class="b0" id="bn0"></div><div class="b1" id="bn1"></div><div class="b2" id="bn2">Choose your card</div></div></div>
 
+<!-- "Opponent found": 3 seconds before every match, while both players connect -->
+<div class="overlay hide" id="introOv">
+  <div class="modal introModal" role="dialog" aria-labelledby="inTitle">
+    <div class="inFound" id="inTitle">OPPONENT FOUND</div>
+    <span class="inMode" id="inMode"></span>
+    <div class="inVs"><div class="inPl" id="inYou"></div><span class="inVsT">VS</span><div class="inPl" id="inOpp"></div></div>
+    <div class="inCount" id="inCount" aria-live="polite">3</div>
+    <div class="inNote">Get ready to arrange your hand</div>
+  </div>
+</div>
+
 <div class="overlay hide" id="over">
   <div class="fxLabel hide" id="fxLabel"></div>
   <div class="modal endModal" id="endModal">
@@ -355,8 +366,25 @@
 <div class="overlay hide sheetOv" id="boardSheet">
   <div class="sheet" role="dialog" aria-label="Leaderboard">
     <div class="shHead"><h2>Leaderboard</h2><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
-    <div class="shTop" id="boardSheetTop"></div><div class="shTabs" role="tablist"><button type="button" data-tab="week" role="tab">This week</button><button type="button" data-tab="month" role="tab">This month</button></div>
+    <div class="shTop" id="boardSheetTop"></div><div class="shTabs" role="tablist"><button type="button" data-tab="week" role="tab">This week</button><button type="button" data-tab="month" role="tab">This month</button><button type="button" data-tab="how" role="tab">How it works</button></div>
     <div class="shBody" id="boardSheetBody"></div>
+  </div>
+</div>
+<div class="overlay hide sheetOv" id="ranksSheet">
+  <div class="sheet" role="dialog" aria-label="Ranks and rewards">
+    <div class="shHead"><h2>Ranks &amp; rewards</h2><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shTabs" role="tablist"><button type="button" data-tab="ranks" role="tab">Ranks</button><button type="button" data-tab="rewards" role="tab">XP &amp; coins</button></div>
+    <div class="shBody" id="ranksSheetBody"></div>
+  </div>
+</div>
+<div class="overlay hide" id="rankUp">
+  <div class="modal rankUpModal" role="dialog" aria-labelledby="ruTitle">
+    <div class="ruEm" id="ruEm"></div>
+    <h2 id="ruTitle"></h2>
+    <p class="muted" id="ruSub"></p>
+    <div class="ruGot" id="ruGot"></div>
+    <button class="btn primary" id="ruWear" type="button">Wear them now</button>
+    <button class="link" id="ruLater" type="button">Later</button>
   </div>
 </div>
 <div class="overlay hide sheetOv" id="settingsSheet">

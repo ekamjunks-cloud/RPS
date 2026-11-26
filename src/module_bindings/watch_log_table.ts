@@ -15,4 +15,8 @@ export default __t.row({
   you: __t.i8(),
   opp: __t.i8(),
   result: __t.string(),
+  youGone: __t.i8().name("you_gone"),
+  oppGone: __t.i8().name("opp_gone"),
+  youAuto: __t.bool().name("you_auto"),
+  oppAuto: __t.bool().name("opp_auto"),
 });

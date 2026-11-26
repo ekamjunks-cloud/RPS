@@ -177,7 +177,7 @@ describe('Google sign-in', () => {
 
 describe('a match', () => {
   it('deals 10 cards split 3/3/4 and follows the rules to the end', () => {
-    const { client, playOut } = setup();
+    const { client, playOut, fireNext } = setup();
     const a = client('a');
     a.call(mod.finishTutorial);
     a.call(mod.startPractice);
@@ -185,7 +185,10 @@ describe('a match', () => {
     for (const c of a.hand()) counts[c.kind]++;
     expect(a.hand()).toHaveLength(10);
     expect(counts.sort()).toEqual([3, 3, 4]);
-    expect(a.game()).toMatchObject({ phase: 'prep', oppHandCount: 10, oppIsBot: true, rated: false, totalRounds: 10 });
+    // "Opponent found" first (3 seconds, bots too), then arranging the hand
+    expect(a.game()).toMatchObject({ phase: 'intro', phaseMs: 3000, oppHandCount: 10, oppIsBot: true, rated: false, totalRounds: 10 });
+    fireNext();
+    expect(a.game().phase).toBe('prep');
     playOut([a]);
     const g = a.game();
     expect(g.over).toBe(true);
@@ -203,14 +206,19 @@ describe('a match', () => {
     expect(g.endResult).toBe(you > opp ? 'win' : opp > you ? 'loss' : 'draw');
   });
 
-  it('plays all 10 rounds even when one player is far ahead', () => {
+  it('plays all 10 rounds, and outside Ranked plays a random card for a player who never picks', () => {
     const { client, playOut } = setup();
     const a = client('a'), b = client('b');
     a.call(mod.createRoom);
     b.call(mod.joinRoom, { code: a.me().roomCode });
-    playOut([a]); // b never plays a card, so a wins every round
+    playOut([a]); // b never plays a card: one is played for them each round
     expect(a.log()).toHaveLength(10);
-    expect(a.game()).toMatchObject({ over: true, youScore: 10, oppScore: 0, endResult: 'win', endReason: 'points' });
+    expect(b.log().every(r => r.youAuto && r.you >= 0 && r.youGone === -2)).toBe(true);
+    expect(a.log().every(r => r.oppAuto)).toBe(true);
+    expect(b.hand()).toHaveLength(0);
+    const g = a.game();
+    expect(g).toMatchObject({ over: true, endReason: 'points' });
+    expect(g.youScore + g.oppScore).toBe(a.log().filter(r => r.result !== 'draw').length);
   });
 
   it('never shows a player the opponent\'s pick before both cards are revealed', () => {
@@ -284,8 +292,10 @@ describe('a match', () => {
     a.call(mod.selectCard, { cardId: a.hand()[0].id });                       // picked, never locked
     b.call(mod.selectCard, { cardId: b.hand()[0].id }); b.call(mod.lockIn);
     while (a.game().phase !== 'result') fireNext();
-    expect(a.game()).toMatchObject({ revealYou: -1, revealResult: 'loss' });
-    expect(a.hand()).toHaveLength(10);
+    // not Ranked: a random card was played for them instead
+    expect(a.game()).toMatchObject({ revealYouAuto: true, revealYouGone: -2 });
+    expect(a.game().revealYou).toBeGreaterThanOrEqual(0);
+    expect(a.hand()).toHaveLength(9);
   });
 
   it('lets the bot lock in, and reveals right away once the player locks in too', () => {
@@ -298,19 +308,26 @@ describe('a match', () => {
     expect(a.game().phase).toBe('reveal');
   });
 
-  it('gives the round to the player who picked when the other is too slow', () => {
+  it('in Ranked, a player who misses their turn loses the round and a random card, shown to both', () => {
     const { client, fireNext } = setup();
     const a = client('a'), b = client('b');
-    a.call(mod.createRoom);
-    b.call(mod.joinRoom, { code: a.me().roomCode });
+    for (const [p, n] of [[a, 'anna'], [b, 'bert']] as const) { p.call(mod.claimName, { name: n }); p.qualify(); }
+    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    expect(a.game()).toMatchObject({ mode: 'ranked', phase: 'intro' });
+    while (a.game().phase !== 'prep') fireNext();
     a.call(mod.ready); b.call(mod.ready);
     while (a.game().phase !== 'pick') fireNext();
     a.call(mod.selectCard, { cardId: a.hand()[0].id }); a.call(mod.lockIn);
     while (a.game().phase !== 'result') fireNext();
-    expect(a.game()).toMatchObject({ revealResult: 'win', revealOpp: -1, youScore: 1 });
+    expect(a.game()).toMatchObject({ revealResult: 'win', revealOpp: -1, youScore: 1, revealOppAuto: false });
     expect(b.game()).toMatchObject({ revealResult: 'loss', revealYou: -1 });
+    const lost = b.game().revealYouGone;
+    expect(lost).toBeGreaterThanOrEqual(0);
+    expect(a.game().revealOppGone).toBe(lost);  // the opponent sees which card it was
     expect(a.hand()).toHaveLength(9);
-    expect(b.hand()).toHaveLength(10); // an unplayed card stays in the hand
+    expect(b.hand()).toHaveLength(9);           // the missed turn still cost a card
+    while (a.log().length === 0) fireNext();
+    expect(a.log()[0]).toMatchObject({ opp: -1, oppGone: lost });
   });
 
   it('lets a player rearrange their hand, and only their own', () => {
@@ -481,7 +498,7 @@ describe('rematch', () => {
     b.call(mod.rematch);
     const g = a.game();
     expect(g.gameId).not.toBe(old);
-    expect(g).toMatchObject({ mode: 'room', over: false, phase: 'prep', round: 1, youScore: 0, oppScore: 0, youRematch: false, oppRematch: false });
+    expect(g).toMatchObject({ mode: 'room', over: false, phase: 'intro', round: 1, youScore: 0, oppScore: 0, youRematch: false, oppRematch: false });
     expect(b.game().gameId).toBe(g.gameId);
     expect(a.hand()).toHaveLength(10);
     expect(b.hand()).toHaveLength(10);
@@ -519,7 +536,7 @@ describe('rematch', () => {
     playOut([a]);
     const bot = a.game().oppName;
     a.call(mod.rematch);
-    expect(a.game()).toMatchObject({ mode: 'practice', over: false, phase: 'prep', oppName: bot, oppIsBot: true });
+    expect(a.game()).toMatchObject({ mode: 'practice', over: false, phase: 'intro', oppName: bot, oppIsBot: true });
   });
 });
 
@@ -972,6 +989,43 @@ describe('XP and card style unlocks', () => {
       expect(a.me()).toMatchObject({ skin: 'gold', frame: 'diamond', title: 'legend' });
       expect(() => b.call(mod.equip, { kind: 'skin', key: 'gold' })).toThrow('Unlock that first');
     } finally { config.allSkins = saved; }
+  });
+});
+
+describe('rank rewards', () => {
+  const items = (test: any, c: any) => ((mod.myItems as any)(test.viewContext(c.auth)) as any[]).map(r => r.item);
+  const achs = (test: any, c: any) => ((mod.myAchievements as any)(test.viewContext(c.auth)) as any[]).map(x => x.key);
+
+  it('reaching Silver in Ranked unlocks the Silver aura and Contender title, kept after the rating drops', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    for (const [p, n] of [[a, 'anna'], [b, 'bert']] as const) { p.call(mod.claimName, { name: n }); p.qualify(); }
+    expect(items(test, a)).not.toContain('aura:silver');
+    for (const p of [a, b]) test.db.player.identity.update({ ...test.db.player.identity.find(p.me().identity)!, rating: 1095 });
+    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    playOut([a, b]);
+    const winner = a.game().endResult === 'win' ? a : b.game().endResult === 'win' ? b : null;
+    if (!winner) return; // a draw moves nobody over the line
+    expect(winner.me().rating).toBeGreaterThanOrEqual(1100);
+    expect(achs(test, winner)).toContain('silver');
+    expect(items(test, winner)).toEqual(expect.arrayContaining(['aura:silver', 'title:contender']));
+    winner.call(mod.equip, { kind: 'title', key: 'contender' });
+    test.db.player.identity.update({ ...test.db.player.identity.find(winner.me().identity)!, rating: 1000 });
+    expect(items(test, winner)).toContain('aura:silver');
+  });
+
+  it('gives Silver on connect to players who reached a rank before it existed, and Gold or Diamond rewards from their awards', () => {
+    const { test, client } = setup();
+    const a = client('a');
+    const id = a.me().identity;
+    test.db.achievement.insert({ id: 0n, identity: id, key: 'diamond', at: test.clock.now() });
+    expect(items(test, a)).toEqual(expect.arrayContaining(['aura:diamond', 'back:prism', 'title:diamond', 'fx:shatter']));
+    expect(items(test, a)).not.toContain('back:goldcrest');
+    a.call(mod.onConnect);
+    expect(achs(test, a)).toContain('silver');
+    expect(items(test, a)).toContain('title:contender');
+    expect(() => a.call(mod.equip, { kind: 'back', key: 'goldcrest' })).toThrow('Unlock that first');
+    a.call(mod.equip, { kind: 'fx', key: 'shatter' });
   });
 });
 

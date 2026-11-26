@@ -46,6 +46,8 @@ export const ITEMS: Item[] = [
   I('aura', 'sunrise', { ach: 'daily7' }),
   I('aura', 'gold', { ach: 'gold' }),
   I('aura', 'diamond', { ach: 'diamond' }),
+  // rank rewards: unlocked the first time you reach a rank in Ranked, kept for good, never sold
+  I('aura', 'silver', { ach: 'silver' }),
   // chat packs
   I('pack', 'starter', { free: true }),
   I('pack', 'goodsport', { level: 2, price: 150 }),
@@ -62,12 +64,17 @@ export const ITEMS: Item[] = [
   I('title', 'grandmaster', { level: 32 }),
   I('title', 'mythic', { level: 42 }),
   I('title', 'legend', { level: 50 }),
+  I('title', 'contender', { ach: 'silver' }),
+  I('title', 'golden', { ach: 'gold' }),
+  I('title', 'diamond', { ach: 'diamond' }),
   I('back', 'classic', { free: true }),
   I('back', 'dots', { level: 13 }),
   I('back', 'stars', { level: 22 }),
   I('back', 'flames', { level: 25 }),
   I('back', 'crown', { level: 35 }),
   I('back', 'goldleaf', { level: 45 }),
+  I('back', 'goldcrest', { ach: 'gold' }),
+  I('back', 'prism', { ach: 'diamond' }),
   I('color', 'green', { free: true }),
   I('color', 'sky', { level: 19 }),
   I('color', 'sunset', { level: 27 }),
@@ -78,6 +85,7 @@ export const ITEMS: Item[] = [
   I('fx', 'lightning', { level: 34 }),
   I('fx', 'meteor', { level: 44 }),
   I('fx', 'supernova', { level: 48 }),
+  I('fx', 'shatter', { ach: 'diamond' }),
 ];
 export const ITEM = new Map(ITEMS.map(i => [i.id, i]));
 export const itemOf = (kind: ItemKind, key: string) => ITEM.get(`${kind}:${key}`);
@@ -100,6 +108,16 @@ export const REACTION_SLOTS = 6;
 export const PHRASE_SLOTS = 4;
 export const DEFAULT_REACTIONS = 'nice,lol,whoa,grr';
 export const DEFAULT_PHRASES = 'gg|Good luck!|Nice one!';
+
+// Rank lines (rating). Keep in step with TIERS in src/ranks.ts.
+export const RANK_LINES = { silver: 1100, gold: 1200, diamond: 1350 };
+/** The award for first reaching each rank; its rank rewards unlock with it. */
+export const RANK_AWARD: Record<string, string> = { silver: 'silver', gold: 'gold', diamond: 'diamond' };
+// XP for a finished match, before the mode multiplier. Forfeits and disconnects give the winner a little, the loser nothing.
+export const XP = { win: 30, draw: 15, loss: 10, walkover: 10, dailyBonus: 25 };
+export const XP_MULT: Record<string, number> = { ranked: 1.5, casual: 1, room: 1, daily: 1, bot: 0.5, practice: 0.5 };
+// Rating K-factor for the 1st, 2nd... Ranked game against the same opponent within 24 hours; after that, 0.
+export const K_STEPS = [32, 16, 8, 4];
 
 // coins (the "Standard" speed). Change here to speed the economy up or down.
 export const COINS = {

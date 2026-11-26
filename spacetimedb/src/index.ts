@@ -9,11 +9,13 @@ import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from
 import { config } from './config';
 import {
   ITEM, ITEMS, itemOf, REACTIONS, PHRASES, REACTION_SLOTS, PHRASE_SLOTS, DEFAULT_REACTIONS, DEFAULT_PHRASES,
-  COINS, COIN_MULT, BIG_ACHIEVEMENTS, FOR_SALE, type ItemKind,
+  COINS, COIN_MULT, BIG_ACHIEVEMENTS, FOR_SALE, XP, XP_MULT, K_STEPS, RANK_LINES, type ItemKind,
 } from './catalog';
 
 // ---------- settings ----------
-const TIMES = { prep: 20000, readyGo: 600, banner: 1600, pick: 10000, reveal: 3000, result: 3000 }; // ms
+// intro: "Opponent found" with a 3-2-1 countdown, so both players are connected before the match starts.
+// reveal: both cards sit face down for a second (card backs on show), then flip.
+const TIMES = { intro: 3000, prep: 20000, readyGo: 600, banner: 1600, pick: 10000, reveal: 4000, result: 3000 }; // ms
 const ROUNDS = 10;               // every match is this many rounds (one per card); most rounds won takes it
 const DC_GRACE_MS = 15000;       // a disconnected player has this long to come back
 const QUEUE_RETRY_MS = 5000;     // re-check the queue this often...
@@ -21,16 +23,12 @@ const QUEUE_RETRIES = 3;         // ...this many times (15s), then start a bot m
 const CLEANUP_MS = 10 * 60 * 1000;      // finished games are removed after 10 minutes
 const SWEEP_EVERY_MICROS = 6n * 3600n * 1_000_000n;
 const GUEST_IDLE_MICROS = 30n * 24n * 3600n * 1_000_000n; // unused guest profiles are removed after 30 days
-const K_STEPS = [32, 16, 8, 4];         // rating K-factor for the 1st, 2nd... ranked game vs the same opponent in 24h, then 0
 const DAY_MICROS = 24n * 3600n * 1_000_000n;
 const HISTORY_KEEP = 20;         // matches kept in each player's history
 // rank tiers by rating. Keep in step with TIERS in src/ranks.ts.
-const GOLD = 1200, DIAMOND = 1350;
+const { silver: SILVER, gold: GOLD, diamond: DIAMOND } = RANK_LINES;
 const DAILY_STAT_KEEP_DAYS = 3;
 
-// XP for a finished match, before the mode multiplier. Forfeits and disconnects give the winner a little, the loser nothing.
-const XP = { win: 30, draw: 15, loss: 10, walkover: 10, dailyBonus: 25 };
-const XP_MULT: Record<string, number> = { ranked: 1.5, casual: 1, room: 1, daily: 1, bot: 0.5, practice: 0.5 };
 const BUG_REPORTS_PER_DAY = 5;
 // looks saved before custom avatars and auras existed are shown as their nearest new equivalent
 const OLD_AURA: Record<string, string> = { fire: 'blaze', daily: 'sunrise' };
@@ -91,7 +89,7 @@ const game = table(
     p1Bot: t.bool(),
     name0: t.string(),
     name1: t.string(),
-    phase: t.string(),              // 'prep' | 'banner' | 'pick' | 'reveal' | 'result' | 'over'
+    phase: t.string(),              // 'intro' | 'prep' | 'banner' | 'pick' | 'reveal' | 'result' | 'over'
     seq: t.u32(),                   // bumped on every phase change; stale timers are ignored
     deadline: t.timestamp(),
     phaseMs: t.u32(),
@@ -121,6 +119,10 @@ const game = table(
     xp1: t.u32().default(0),
     coins0: t.u32().default(0),        // coins each player earned from this match (bonuses included)
     coins1: t.u32().default(0),
+    gone0: t.i8().default(-2),         // missed turn in Ranked: the random card that left the hand (NONE = none)
+    gone1: t.i8().default(-2),
+    auto0: t.bool().default(false),    // missed turn elsewhere: a random card was played for this player
+    auto1: t.bool().default(false),
   }
 );
 
@@ -144,6 +146,10 @@ const roundLog = table(
     c0: t.i8(),
     c1: t.i8(),
     winner: t.i8(),
+    g0: t.i8().default(-2),   // a card lost to a missed turn in Ranked (NONE = none)
+    g1: t.i8().default(-2),
+    a0: t.bool().default(false), // the card was played automatically after a missed turn
+    a1: t.bool().default(false),
   }
 );
 
@@ -587,6 +593,11 @@ function statsOf(ctx: Ctx, who: Identity): StatsRow {
 function saveStats(ctx: Ctx, s: StatsRow) {
   if (ctx.db.stats.identity.find(s.identity)) ctx.db.stats.identity.update(s); else ctx.db.stats.insert(s);
 }
+/** Players who reached a rank before its award existed (Silver arrived later) get it, once, when they next connect. */
+function backfillRankAwards(ctx: Ctx, p: PlayerRow) {
+  const has = new Set(Array.from(ctx.db.achievement.identity.filter(p.identity), a => a.key));
+  if (!has.has('silver') && (p.rating >= SILVER || has.has('gold') || has.has('diamond'))) award(ctx, p.identity, 'silver');
+}
 /** Gives an achievement (once) and its coins. Returns the coins paid, 0 if it was already earned. */
 function award(ctx: Ctx, who: Identity, key: string): number {
   for (const a of ctx.db.achievement.identity.filter(who)) if (a.key === key) return 0;
@@ -827,6 +838,7 @@ function recordMatch(ctx: Ctx, g: GameRow, seat: number, p: PlayerRow, ratingCha
   if (streak >= 5) got('streak5');
   if (p.wins >= 50) got('wins50');
   if (won && g.rated) got('ranked_win');
+  if (g.rated && p.rating >= SILVER) got('silver');
   if (g.rated && p.rating >= GOLD) got('gold');
   if (g.rated && p.rating >= DIAMOND) got('diamond');
   if (g.mode === 'room' && g.reason === 'points') got('friend');
@@ -856,6 +868,7 @@ function startGame(ctx: Ctx, a: PlayerRow, b: PlayerRow | undefined, mode: strin
     over: false, winner: -1, reason: '', ratingDelta: 0,
     conn0: a.conns > 0, conn1: b ? b.conns > 0 : true, dc0: EPOCH, dc1: EPOCH,
     lock0: false, lock1: false, rematch0: false, rematch1: false, xp0: 0, xp1: 0, coins0: 0, coins1: 0,
+    gone0: NONE, gone1: NONE, auto0: false, auto1: false,
   });
   // deal: 3 of two kinds and 4 of a third, shuffled
   for (const seat of [0, 1]) {
@@ -869,8 +882,7 @@ function startGame(ctx: Ctx, a: PlayerRow, b: PlayerRow | undefined, mode: strin
     ctx.db.player.identity.update({ ...p, gameId: g.id, waiting: '', roomCode: '' });
     ctx.db.watcher.identity.delete(p.identity); // playing now, not watching
   }
-  setPhase(ctx, g, 'prep', TIMES.prep);
-  if (g.p1Bot) addTimer(ctx, g, 'botReady', 3000 + rng(6000));
+  setPhase(ctx, g, 'intro', TIMES.intro);
   // a player who is already gone when the game starts gets the same grace period as any disconnect
   if (!g.conn0) { g.dc0 = addMs(ctx.timestamp, DC_GRACE_MS); addTimer(ctx, g, 'dc0', DC_GRACE_MS); }
   if (!g.conn1) { g.dc1 = addMs(ctx.timestamp, DC_GRACE_MS); addTimer(ctx, g, 'dc1', DC_GRACE_MS); }
@@ -892,16 +904,25 @@ function markReady(ctx: Ctx, g: GameRow, seat: number) {
 function startRound(ctx: Ctx, g: GameRow) {
   g.sel0 = 0n; g.sel1 = 0n; g.lock0 = false; g.lock1 = false;
   g.last0 = NONE; g.last1 = NONE; g.lastWinner = -1;
+  g.gone0 = NONE; g.gone1 = NONE; g.auto0 = false; g.auto1 = false;
   setPhase(ctx, g, 'banner', TIMES.banner);
 }
 
 function reveal(ctx: Ctx, g: GameRow) {
-  // only a locked-in card counts; a card that was picked but not locked in time is "too slow"
-  const picked = [g.lock0 ? g.sel0 : 0n, g.lock1 ? g.sel1 : 0n].map((sel, seat) => {
+  // Only a locked-in card counts. Missing your turn (no card locked in time) costs a card either way:
+  // in Ranked a random card leaves your hand and you lose the round; elsewhere a random card is played for you.
+  const gone = [NONE, NONE], auto = [false, false];
+  const picked = [0, 1].map(seat => {
+    const sel = seat === 0 ? (g.lock0 ? g.sel0 : 0n) : (g.lock1 ? g.sel1 : 0n);
     const c = sel !== 0n ? ctx.db.handCard.id.find(sel) : undefined;
-    if (!c || c.gameId !== g.id || c.seat !== seat) return MISSED;
-    ctx.db.handCard.id.delete(c.id);
-    return c.kind;
+    if (c && c.gameId === g.id && c.seat === seat) { ctx.db.handCard.id.delete(c.id); return c.kind; }
+    const hand = cardsOf(ctx, g.id, seat);
+    if (!hand.length) return MISSED;
+    const r = hand[ctx.random.integerInRange(0, hand.length - 1)]!;
+    ctx.db.handCard.id.delete(r.id);
+    if (g.mode === 'ranked') { gone[seat] = r.kind; return MISSED; }
+    auto[seat] = true;
+    return r.kind;
   });
   const [a, b] = picked as [number, number];
   let winner = -1;
@@ -909,6 +930,7 @@ function reveal(ctx: Ctx, g: GameRow) {
   else if (a >= 0) winner = 0;      // opponent was too slow
   else if (b >= 0) winner = 1;
   g.last0 = a; g.last1 = b; g.lastWinner = winner;
+  g.gone0 = gone[0]!; g.gone1 = gone[1]!; g.auto0 = auto[0]!; g.auto1 = auto[1]!;
   g.sel0 = 0n; g.sel1 = 0n; g.lock0 = false; g.lock1 = false;
   setPhase(ctx, g, 'reveal', TIMES.reveal);
 }
@@ -916,6 +938,10 @@ function reveal(ctx: Ctx, g: GameRow) {
 /** Moves the game on when its phase timer fires. */
 function advance(ctx: Ctx, g: GameRow) {
   switch (g.phase) {
+    case 'intro':
+      setPhase(ctx, g, 'prep', TIMES.prep);
+      if (g.p1Bot) addTimer(ctx, g, 'botReady', 3000 + ctx.random.integerInRange(0, 5999));
+      break;
     case 'prep':
       startRound(ctx, g);
       break;
@@ -929,7 +955,8 @@ function advance(ctx: Ctx, g: GameRow) {
     case 'reveal':
       if (g.lastWinner === 0) g.score0 += 1;
       if (g.lastWinner === 1) g.score1 += 1;
-      ctx.db.roundLog.insert({ id: 0n, gameId: g.id, n: g.round, c0: g.last0, c1: g.last1, winner: g.lastWinner });
+      ctx.db.roundLog.insert({ id: 0n, gameId: g.id, n: g.round, c0: g.last0, c1: g.last1, winner: g.lastWinner,
+        g0: g.gone0, g1: g.gone1, a0: g.auto0, a1: g.auto1 });
       botReact(ctx, g);
       setPhase(ctx, g, 'result', TIMES.result);
       break;
@@ -1856,6 +1883,7 @@ export const onConnect = spacetimedb.clientConnected(ctx => {
   }
   ctx.db.player.identity.update({ ...p, conns: p.conns + 1, lastSeen: ctx.timestamp });
   markActive(ctx, ctx.sender);
+  backfillRankAwards(ctx, p);
   bumpHour(ctx, 0);
   const g = liveGame(ctx, p);
   if (!g) return;
@@ -2048,6 +2076,10 @@ const gameViewRow = t.row('GameView', {
   revealYou: t.i8(),
   revealOpp: t.i8(),
   revealResult: t.string(),   // '' until the result phase, then 'win' | 'loss' | 'draw'
+  revealYouGone: t.i8(),      // a missed turn in Ranked: the card that left your hand (NONE = none)
+  revealOppGone: t.i8(),
+  revealYouAuto: t.bool(),    // a missed turn elsewhere: this card was played for you
+  revealOppAuto: t.bool(),
   over: t.bool(),
   endResult: t.string(),
   endReason: t.string(),
@@ -2097,6 +2129,8 @@ export const myGame = spacetimedb.view({ name: 'my_game', public: true }, t.arra
     revealYou: shown ? (you ? g.last0 : g.last1) : NONE,
     revealOpp: shown ? (you ? g.last1 : g.last0) : NONE,
     revealResult: shown && g.phase === 'result' ? result(g.lastWinner, seat) : '',
+    revealYouGone: shown ? (you ? g.gone0 : g.gone1) : NONE, revealOppGone: shown ? (you ? g.gone1 : g.gone0) : NONE,
+    revealYouAuto: shown && (you ? g.auto0 : g.auto1), revealOppAuto: shown && (you ? g.auto1 : g.auto0),
     over: g.over, endResult: g.over ? result(g.winner, seat) : '', endReason: g.reason,
     ratingChange: you ? g.ratingDelta : -g.ratingDelta,
     youRematch: g.over && (you ? g.rematch0 : g.rematch1),
@@ -2139,7 +2173,10 @@ export const myHand = spacetimedb.view({ name: 'my_hand', public: true }, t.arra
   return out;
 });
 
-const logViewRow = t.row('RoundView', { n: t.u32(), you: t.i8(), opp: t.i8(), result: t.string() });
+const logViewRow = t.row('RoundView', {
+  n: t.u32(), you: t.i8(), opp: t.i8(), result: t.string(),
+  youGone: t.i8(), oppGone: t.i8(), youAuto: t.bool(), oppAuto: t.bool(),
+});
 
 export const myLog = spacetimedb.view({ name: 'my_log', public: true }, t.array(logViewRow), ctx => {
   const p = ctx.db.player.identity.find(ctx.sender);
@@ -2150,6 +2187,7 @@ export const myLog = spacetimedb.view({ name: 'my_log', public: true }, t.array(
   if (seat === -1) return [];
   return Array.from(ctx.db.roundLog.gameId.filter(g.id), l => ({
     n: l.n, you: seat === 0 ? l.c0 : l.c1, opp: seat === 0 ? l.c1 : l.c0, result: result(l.winner, seat),
+    youGone: seat === 0 ? l.g0 : l.g1, oppGone: seat === 0 ? l.g1 : l.g0, youAuto: seat === 0 ? l.a0 : l.a1, oppAuto: seat === 0 ? l.a1 : l.a0,
   }));
 });
 
@@ -2448,6 +2486,7 @@ export const watchLog = spacetimedb.view({ name: 'watch_log', public: true }, t.
   const { g, seat } = w;
   return Array.from(ctx.db.roundLog.gameId.filter(g.id), l => ({
     n: l.n, you: seat === 0 ? l.c0 : l.c1, opp: seat === 0 ? l.c1 : l.c0, result: result(l.winner, seat),
+    youGone: seat === 0 ? l.g0 : l.g1, oppGone: seat === 0 ? l.g1 : l.g0, youAuto: seat === 0 ? l.a0 : l.a1, oppAuto: seat === 0 ? l.a1 : l.a0,
   }));
 });
 

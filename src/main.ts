@@ -7,14 +7,14 @@ import { KINDS, ICON, face, mini, TROPHY, SKULL, SHAKE, LOCK, CHAT, GEAR, EXIT, 
 import { sfx, unlock, isMuted, setMuted, isMusicOn, setMusicOn, setTrack } from './sfx';
 import { burstAt, vibrate, winEffect, setReducedMotion, setVibration } from './fx';
 import { drawResultCard } from './card';
-import { tierOf, nextTier, tierBadge, ACHIEVEMENTS, achievementOf, today, msToNextDay, msToSeasonEnd, seasonName, shortTime } from './ranks';
+import { tierOf, nextTier, tierBadge, TIERS, ACHIEVEMENTS, achievementOf, today, msToNextDay, msToSeasonEnd, seasonName, shortTime } from './ranks';
 import { addSprite } from './sprite';
 import {
-  ITEM, ITEMS, COINS, REACTION_SLOTS, PHRASE_SLOTS, levelOf, nameOf, descOf, itemsOf, KIND_LABEL, avatarHtml, reactionSvg, reactionName,
+  ITEM, ITEMS, COINS, XP, XP_MULT, COIN_MULT, K_STEPS, REACTION_SLOTS, PHRASE_SLOTS, levelOf, nameOf, descOf, itemsOf, KIND_LABEL, avatarHtml, reactionSvg, reactionName,
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.3.1';
+const VERSION = '2.4';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = '';
@@ -45,8 +45,17 @@ const store = {
 };
 
 // fill every data-icon placeholder with its artwork
+// match types: one icon each (stroke drawings that take the button's colour)
+const svg24 = (d: string) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const MODE_ICONS = {
+  mRanked: svg24('<path d="M7 4h10v4a5 5 0 0 1-10 0Z M5 5H3v2a3 3 0 0 0 3 3 M19 5h2v2a3 3 0 0 1-3 3 M12 13v4 M8 20h8"/>'),
+  mCasual: svg24('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17 M12 3.5c2.5 2.4 3.6 5.2 3.6 8.5s-1.1 6.1-3.6 8.5 M12 3.5C9.5 5.9 8.4 8.7 8.4 12s1.1 6.1 3.6 8.5" stroke-width="2"/>'),
+  mFriend: svg24('<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="17" cy="9" r="2.4" stroke-width="2"/><path d="M16.5 13.6c2.6.2 4.5 2 4.5 4.6" stroke-width="2"/>'),
+  mBot: svg24('<rect x="4.5" y="8" width="15" height="11" rx="3.5"/><path d="M12 4v4 M9 13h.01 M15 13h.01 M2.5 13v2.5 M21.5 13v2.5" stroke-width="2.4"/>'),
+  lock: svg24('<rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+};
 const STATIC_ICONS: Record<string, string> = {
-  ...ICON, trophy: TROPHY, gear: GEAR, exit: EXIT, list: LIST, locker: LOCKER, bag: BAG, play: PLAY, flag: FLAG, stats: STATS, calendar: CALENDAR,
+  ...ICON, ...MODE_ICONS, trophy: TROPHY, gear: GEAR, exit: EXIT, list: LIST, locker: LOCKER, bag: BAG, play: PLAY, flag: FLAG, stats: STATS, calendar: CALENDAR,
 };
 document.querySelectorAll<HTMLElement>('[data-icon]').forEach(el => { el.innerHTML = STATIC_ICONS[el.dataset.icon!] || ''; });
 
@@ -68,6 +77,8 @@ let notice = '';           // a one-off message for the home screen
 let unlockedBefore = true;
 let clashDone = '';        // "gameId:round" whose clash effect has played
 let clashTimer: any = 0;
+let flipTimer: any = 0, faceDown = '', prevIntro = false, introSec = -1;
+const FACE_DOWN_MS = 1000; // cards sit face down this long before they flip (the server's reveal is 1s longer to match)
 let endShown = '';         // gameId whose end screen effects have played
 let lastSec = -1;
 let raf = 0;
@@ -289,7 +300,8 @@ function buildState(gv: any) {
   }
   const hand = Array.from(conn.db.myHand.iter()).sort((a, b) => a.pos - b.pos).map(c => ({ id: String(c.id), t: KINDS[c.kind] }));
   const log = Array.from(conn.db.myLog.iter()).sort((a, b) => a.n - b.n)
-    .map(l => ({ n: l.n, you: kindName(l.you), opp: kindName(l.opp), result: l.result }));
+    .map(l => ({ n: l.n, you: kindName(l.you), opp: kindName(l.opp), result: l.result,
+      youGone: kindName(l.youGone), oppGone: kindName(l.oppGone), youAuto: l.youAuto, oppAuto: l.oppAuto }));
   const lockKey = `${gv.gameId}:${gv.round}`;
   if (gv.phase !== 'pick' || gv.youLocked) lockPending = ''; // the server has caught up
   return {
@@ -301,7 +313,8 @@ function buildState(gv: any) {
     opp: { name: gv.oppName, isBot: gv.oppIsBot, rating: gv.oppRating, avatar: gv.oppAvatar, frame: gv.oppFrame, skin: gv.oppSkin,
       back: gv.oppBack, color: gv.oppColor, fx: gv.oppFx, title: gv.oppTitle,
       friend: gv.oppFriend, score: gv.oppScore, handCount: gv.oppHandCount, ready: gv.oppReady, placed: gv.oppPlaced, connected: gv.oppConnected },
-    reveal: gv.revealShown ? { n: gv.round, you: kindName(gv.revealYou), opp: kindName(gv.revealOpp), result: gv.revealResult || null } : null,
+    reveal: gv.revealShown ? { n: gv.round, you: kindName(gv.revealYou), opp: kindName(gv.revealOpp), result: gv.revealResult || null,
+      youGone: kindName(gv.revealYouGone), oppGone: kindName(gv.revealOppGone), youAuto: gv.revealYouAuto, oppAuto: gv.revealOppAuto } : null,
     log,
     ended: gv.over ? { result: gv.endResult, reason: gv.endReason } : null,
     rematch: { you: gv.youRematch, opp: gv.oppRematch, oppLeft: gv.oppLeft },
@@ -361,7 +374,7 @@ function leaveGameScreen() {
 // ---------- account ----------
 const suggestName = (n: string) => n.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
 function closeModals() {
-  for (const id of ['friendModal', 'confirmLeave', 'reportModal', 'profileCard']) $(id).classList.add('hide');
+  for (const id of ['friendModal', 'confirmLeave', 'reportModal', 'profileCard', 'rankUp']) $(id).classList.add('hide');
   document.querySelectorAll('.sheetOv').forEach(el => el.classList.add('hide'));
 }
 
@@ -542,11 +555,12 @@ function renderNotice() {
 type Mode = 'ranked' | 'casual' | 'friend' | 'practice';
 let mode: Mode = (['ranked', 'casual', 'friend', 'practice'].includes(store.get('rps10_mode') || '') ? store.get('rps10_mode') : 'ranked') as Mode;
 const MODE_HINT: Record<Mode, string> = {
-  ranked: 'Rated · counts on the leaderboards',
-  casual: 'A real opponent · no rating change',
-  friend: 'Private room · send your friend a code',
-  practice: 'Against a bot · half XP and coins',
+  ranked: 'rated, counts on the leaderboards',
+  casual: 'a real opponent, no rating change',
+  friend: 'a private room, send your friend a code',
+  practice: 'against a bot, half XP and coins',
 };
+const MODE_NAME_SHORT: Record<Mode, string> = { ranked: 'Ranked', casual: 'Unranked', friend: 'Friend', practice: 'Practice' };
 function renderModes() {
   const locked = !me.practiceDone;
   const shown: Mode = locked && (mode === 'ranked' || mode === 'casual') ? 'practice' : mode;
@@ -557,9 +571,9 @@ function renderModes() {
     b.disabled = locked && (m === 'ranked' || m === 'casual');
   });
   mode = shown;
-  $('modeHint').textContent = locked ? 'Finish one practice match to unlock online play' : MODE_HINT[mode];
+  $('modeHint').innerHTML = locked ? 'Finish one practice match to unlock <b>Ranked</b> and <b>Unranked</b>' : `<b>${MODE_NAME_SHORT[mode]}:</b> ${MODE_HINT[mode]}`;
   $('quickIc').innerHTML = PLAY;
-  $('quickTx').textContent = mode === 'friend' ? 'PLAY A FRIEND' : mode === 'practice' ? 'PRACTICE' : 'PLAY';
+  $('quickTx').textContent = mode === 'friend' ? 'PLAY A FRIEND' : mode === 'practice' ? 'PRACTICE' : mode === 'casual' ? 'PLAY UNRANKED' : 'PLAY RANKED';
   const maint = maintOn() && (mode === 'ranked' || mode === 'casual' || mode === 'friend');
   $('btnQuick').classList.toggle('locked', maint);
 }
@@ -596,7 +610,7 @@ function renderBoard() {
 }
 
 // ---------- sheets: Locker, Store, Level road, Stats, Leaderboard, Settings ----------
-const sheetTab: Record<string, string> = { lockerSheet: 'cards', storeSheet: 'skin', statsSheet: 'overview', boardSheet: 'week', friendsSheet: 'friends' };
+const sheetTab: Record<string, string> = { lockerSheet: 'cards', storeSheet: 'skin', statsSheet: 'overview', boardSheet: 'week', friendsSheet: 'friends', ranksSheet: 'ranks' };
 function openSheet(id: string, tab?: string) {
   closeModals();
   if (tab) sheetTab[id] = tab;
@@ -617,7 +631,12 @@ function renderSheet(id: string) {
   else if (id === 'storeSheet') renderStore();
   else if (id === 'roadSheet') renderRoad();
   else if (id === 'statsSheet') renderStats();
-  else if (id === 'boardSheet') renderBoardSheet();
+  else if (id === 'boardSheet') {
+    // "How it works" opens the Ranks screen
+    if (sheetTab.boardSheet === 'how') { sheetTab.boardSheet = 'week'; openSheet('ranksSheet', 'ranks'); return; }
+    renderBoardSheet();
+  }
+  else if (id === 'ranksSheet') renderRanks();
   else if (id === 'settingsSheet') renderSettings();
   else if (id === 'friendsSheet') renderFriends();
   else if (id === 'profileSheet') renderProfile();
@@ -722,10 +741,100 @@ function checkAchievements() {
   for (const k of keys) {
     if (achSeen.has(k)) continue;
     achSeen.add(k); achNew.push(k);
+    if (RANK_ORDER.includes(k as any)) { rankUpQueue.push(k); setTimeout(showRankUp, 1700); continue; }
     const a = achievementOf(k);
     if (a) popup({ icon: `<span class="apEmo">${a.icon}</span>`, label: 'Achievement unlocked', title: a.name, sub: a.how });
   }
 }
+
+// ---------- Ranks & rewards: how ranks work, and what every match pays (numbers come from the server's catalog) ----------
+const KIND_SHORT: Partial<Record<ItemKind, string>> = { aura: 'aura', back: 'card back', title: 'title', fx: 'win effect' };
+/** "Diamond aura", "Golden title", "Prism card back". */
+function rewardLabel(i: { id: string; kind: ItemKind }) {
+  const n = nameOf(i.id);
+  const nice = i.kind === 'title' ? n.charAt(0) + n.slice(1).toLowerCase() : n;
+  return `${nice} ${KIND_SHORT[i.kind] ?? KIND_LABEL[i.kind].toLowerCase()}`;
+}
+function renderRanks() {
+  const tab = sheetTab.ranksSheet;
+  const mine = owned();
+  let html = '';
+  if (tab === 'ranks') {
+    const t = tierOf(me.rating), n = nextTier(me.rating);
+    html += '<div class="rkLadder">' + [...TIERS].reverse().map(x => {
+      const isMe = x.key === t.key;
+      const rw = rankRewards(x.key);
+      const got = rw.filter(i => mine.has(i.id)).length;
+      const line = x.min === -Infinity ? 'Everyone starts here' : `${fmt(x.min)}+ rating`;
+      const rewards = rw.length ? `<small class="rkRw">${rw.map(i => esc(rewardLabel(i))).join(' · ')}${got ? ` <span class="up">${got === rw.length ? '✓ yours' : `${got}/${rw.length} yours`}</span>` : ''}</small>` : '';
+      return `<div class="rkRung${isMe ? ' me' : ''}">${tierBadge(x)}<span class="rkMid"><b>${x.name}</b><small>${line}</small>${rewards}</span>${isMe ? `<span class="rkYou">YOU · ${fmt(me.rating)}</span>` : ''}</div>`;
+    }).join('') + '</div>';
+    const lo = t.min === -Infinity ? 1000 : t.min, hi = n ? n.min : lo;
+    const pctNext = n ? Math.max(4, Math.min(100, Math.round(((me.rating - Math.min(lo, me.rating)) / Math.max(1, hi - Math.min(lo, me.rating))) * 100))) : 100;
+    html += `<div class="rkProg"><div><span>${t.name} · ${fmt(me.rating)}</span><span>${n ? `<b>${n.min - me.rating}</b> rating to ${n.name}` : 'Top rank. Stay there!'}</span></div><i><b style="width:${pctNext}%"></b></i></div>`;
+    const k0 = K_STEPS[0]! / 2;
+    const steps = [...K_STEPS.map(k => k / 2), 0].join(' → ');
+    html += `<h4>How rating moves <span class="sub">Ranked only</span></h4><div class="rkRules">`
+      + `<div><b class="up">+${k0}</b><span>Beat a player at your level</span></div>`
+      + `<div><b class="down">−${k0}</b><span>Lose to a player at your level</span></div>`
+      + `<div><b class="gold">±</b><span>Beat someone stronger and you get more. Lose to someone weaker and you lose more.</span></div>`
+      + `<div><b>${k0}→0</b><span>Playing the same person again within 24 hours counts less each time (${steps}).</span></div></div>`
+      + `<div class="rkChips"><div><b>Monthly seasons</b>On the 1st, ratings move halfway back to 1,000.</div><div><b>Weekly board</b>3 points a Ranked win, 1 a draw. Resets on Mondays.</div></div>`
+      + `<p class="muted small ctr">Everyone starts at 1,000. Reaching a rank for the first time unlocks its rewards for good.</p>`;
+  } else {
+    const s = info();
+    const evOn = !!s && !!s.eventName && Number(BigInt(s.eventEndsAt ?? 0) / 1000n) > Date.now() && Number(BigInt(s.eventStartsAt ?? 0) / 1000n) <= Date.now();
+    if (evOn) html += `<div class="noticeBar evBar" style="margin:0"><b>${esc(s.eventName)}</b> is on: ${[s.eventCoinPct > 100 ? `${s.eventCoinPct / 100}× coins` : '', s.eventXpPct > 100 ? `${s.eventXpPct / 100}× XP` : ''].filter(Boolean).join(' and ')} from every match.</div>`;
+    const MODES: [string, string, string][] = [['ranked', 'Ranked', '#ffc83d'], ['casual', 'Unranked', '#6fe0ff'], ['room', 'Friend', '#ff7ac0'], ['practice', 'Practice', '#3ee6a0'], ['daily', 'Daily', '#ffb25b']];
+    const cell = (mode: string, res: 'win' | 'draw' | 'loss') => {
+      const xp = Math.round((XP[res] + (mode === 'daily' ? XP.dailyBonus : 0)) * (XP_MULT[mode] ?? 1));
+      const coins = Math.round(COINS[res] * (COIN_MULT[mode] ?? 1));
+      return `<td><b>${xp} XP</b><small>${coins}${mode === 'daily' && res === 'win' ? ` +${COINS.dailyWin}` : ''}</small></td>`;
+    };
+    html += `<h4>Every match <span class="sub">XP, then coins</span></h4><div class="rkTable"><table><tr><th>Match type</th><th>Win</th><th>Draw</th><th>Loss</th></tr>`
+      + MODES.map(([m, label, col]) => `<tr><td><span class="rkMode"><i style="background:${col}"></i>${label}</span></td>${cell(m, 'win')}${cell(m, 'draw')}${cell(m, 'loss')}</tr>`).join('')
+      + '</table></div>';
+    const coin = '<i class="coin"></i>';
+    html += `<h4>Bonuses</h4><div class="rkBonus">`
+      + `<div><span>First win of the day</span><b>${coin}+${COINS.firstWin}</b></div>`
+      + `<div><span>Play the daily challenge</span><b>${coin}+${COINS.dailyPlay}</b></div>`
+      + `<div><span>Level up (every 5th level)</span><b>${coin}+${COINS.level} (+${COINS.level5})</b></div>`
+      + `<div><span>An award (big ones)</span><b>${coin}+${COINS.ach} (+${COINS.achBig})</b></div>`
+      + `<div><span>Your opponent quits (×${XP_MULT.ranked} in Ranked)</span><b>${XP.walkover} XP · ${coin}${COINS.walkover}</b></div></div>`
+      + `<p class="muted small">Each level needs 25 more XP than the last (100, 125, 150…). Ranked pays ${XP_MULT.ranked}×; Practice and bots pay half. Coins are only ever earned by playing.</p>`;
+  }
+  $('ranksSheetBody').innerHTML = html;
+}
+$('btnRank').onclick = () => openSheet('ranksSheet', 'ranks');
+$('statsSheet').addEventListener('click', (e: Event) => { if ((e.target as HTMLElement).closest('[data-ranks]')) openSheet('ranksSheet', 'ranks'); });
+$('statsSheet').addEventListener('keydown', (e: KeyboardEvent) => { if ((e.key === 'Enter' || e.key === ' ') && (e.target as HTMLElement).closest('[data-ranks]')) { e.preventDefault(); openSheet('ranksSheet', 'ranks'); } });
+
+// ---------- rank up: the first time you reach Silver, Gold or Diamond ----------
+const rankUpQueue: string[] = [];
+let rankUpShown = '';
+function showRankUp() {
+  if (!$('rankUp').classList.contains('hide')) return;
+  const k = rankUpQueue.shift();
+  if (!k) return;
+  const t = TIERS.find(x => x.key === k)!;
+  rankUpShown = k;
+  $('ruEm').innerHTML = tierBadge(t);
+  $('rankUp').querySelector('.rankUpModal')!.className = `modal rankUpModal ru-${k}`;
+  $('ruTitle').textContent = `${t.name.toUpperCase()}!`;
+  $('ruSub').textContent = `You reached ${t.name} · ${fmt(me.rating)} rating`;
+  $('ruGot').innerHTML = rankRewards(k).map(i => `<div>${itemArt(i.id, 40, me.avatar)}<span><b>${esc(nameOf(i.id))}</b><small>${esc(KIND_LABEL[i.kind])}</small></span></div>`).join('');
+  $('rankUp').classList.remove('hide');
+  sfx.unlock(); vibrate([20, 40, 20, 40, 60]);
+  setTimeout(() => burstAt($('ruEm'), t.key === 'diamond' ? ['#e6fdff', '#7fe3ff', '#d79cff'] : t.key === 'gold' ? ['#ffc83d', '#fff3c4', '#ffb21f'] : ['#ffffff', '#c3c9e6'], 28), 250);
+}
+function closeRankUp() { $('rankUp').classList.add('hide'); if (rankUpQueue.length) setTimeout(showRankUp, 400); }
+if (import.meta.env.DEV) (window as any).__rankUp = (k: string) => { rankUpQueue.push(k); showRankUp(); }; // try the rank-up moment from the console while developing
+$('ruLater').onclick = closeRankUp;
+$('ruWear').onclick = async () => {
+  for (const i of rankRewards(rankUpShown)) if (i.kind !== 'pack') await call('equip', { kind: i.kind, key: i.key });
+  toast('Wearing your new rank rewards');
+  closeRankUp();
+};
 
 const pct = (w: number, n: number) => (n ? Math.round((w / n) * 100) + '%' : '—');
 /** My stats: Overview, Cards, Awards and History, each fitting one screen. */
@@ -743,7 +852,7 @@ function renderStats() {
       cell(s.bestStreak || 0, 'Best streak'), cell(s.perfects || 0, 'Perfect 10s'), cell(s.dailyStreak || 0, 'Daily streak')].join('')}</div>`
       + `<h4>Last 10 matches <span class="sub">Newest first</span></h4><div class="last10">${hist.length ? hist.map(h => `<i class="o${h.result[0]}">${h.result === 'win' ? 'W' : h.result === 'loss' ? 'L' : 'D'}</i>`).join('') : '<span class="muted">No matches yet. Play one to see your stats.</span>'}</div>`;
     const last = s.lastSeason;
-    html += `<h4>Rank</h4><div class="rankRow">${tierBadge(tierOf(me.rating))}<span><b>${tierOf(me.rating).name} · ${fmt(me.rating)}</b><small>${(() => { const n = nextTier(me.rating); return n ? `${n.min - me.rating} rating to ${n.name}` : 'Top rank. Stay there!'; })()}${last ? ` · last season ${tierOf(last).name} (${last})` : ''}</small></span></div>`;
+    html += `<h4>Rank <span class="sub">tap for how ranks work</span></h4><div class="rankRow" role="button" tabindex="0" data-ranks>${tierBadge(tierOf(me.rating))}<span><b>${tierOf(me.rating).name} · ${fmt(me.rating)}</b><small>${(() => { const n = nextTier(me.rating); return n ? `${n.min - me.rating} rating to ${n.name}` : 'Top rank. Stay there!'; })()}${last ? ` · last season ${tierOf(last).name} (${last})` : ''}</small></span></div>`;
   } else if (tab === 'cards') {
     const plays = [s.plays0 || 0, s.plays1 || 0, s.plays2 || 0], wins = [s.wins0 || 0, s.wins1 || 0, s.wins2 || 0];
     const opens = [s.opens0 || 0, s.opens1 || 0, s.opens2 || 0];
@@ -931,7 +1040,7 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
   $('totalR').textContent = s.totalRounds;
   $('round').textContent = s.round;
   const final = s.round >= s.totalRounds && s.phase !== 'prep';
-  $('roundLbl').textContent = s.phase === 'prep' ? 'GET READY' : final ? 'FINAL ROUND' : 'ROUND';
+  $('roundLbl').textContent = s.phase === 'prep' || s.phase === 'intro' ? 'GET READY' : final ? 'FINAL ROUND' : 'ROUND';
   document.body.classList.toggle('finalRound', final && s.phase !== 'over');
   $('sYou').textContent = s.you.score;
   $('sOpp').textContent = s.opp.score;
@@ -955,12 +1064,20 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
   const phase = s.phase;
   const prep = phase === 'prep';
   $('prep').classList.toggle('on', prep);
+  // "Opponent found": who you're up against, and a 3-2-1 countdown while both players connect
+  $('introOv').classList.toggle('hide', phase !== 'intro');
+  if (phase === 'intro') renderIntro(s, entering);
+  if (entering && prevIntro && phase === 'prep') sfx.go();
+  prevIntro = phase === 'intro';
   document.body.dataset.phase = phase;
 
   // the one action button: always in place so the layout never jumps
   const btn = $('readyBtn');
   btn.className = 'btn action';
-  if (prep) {
+  if (phase === 'intro') {
+    btn.disabled = true;
+    btn.textContent = 'Get ready…';
+  } else if (prep) {
     $('chipYou').textContent = s.you.ready ? 'You ✓' : 'You'; $('chipYou').className = 'chip' + (s.you.ready ? ' ok' : '');
     $('chipOpp').textContent = s.opp.name + (s.opp.ready ? ' ✓' : ''); $('chipOpp').className = 'chip' + (s.opp.ready ? ' ok' : '');
     btn.disabled = s.you.ready;
@@ -1008,11 +1125,32 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
     // draw the revealed cards when the reveal starts, or when we join the game partway through it
     if (entering && (phase === 'reveal' || prevPhase !== 'reveal')) {
       const anim = phase === 'reveal';
-      setSlot('slotYou', r.you ? 'face' + (anim ? ' slam' : '') : 'miss', r.you ? face(r.you) : '<span class="slow">Too<br>slow</span>');
-      setSlot('slotOpp', r.opp ? 'face' + (anim ? ' flip' : '') : 'miss',
-        r.opp ? (anim ? `<span class="fl"><span class="fr">${face(r.opp)}</span><span class="bk">${backHtml(s.opp.back)}</span></span>` : face(r.opp)) : '<span class="slow">Too<br>slow</span>');
-      $('lblYou').textContent = 'You';
-      if (anim) { sfx.flip(); clearTimeout(clashTimer); clashTimer = setTimeout(() => clash(r, k), 650); }
+      const myBack = (me && me.back) || 'classic';
+      const slow = '<span class="slow">Too<br>slow</span>';
+      $('lblYou').textContent = r.youAuto ? 'You · auto-played' : 'You';
+      $('lblOpp').textContent = r.oppAuto ? `${s.opp.name} · auto-played` : s.opp.name;
+      if (anim) {
+        // both cards slam down face down for a second, so both card backs are on show, then flip together
+        faceDown = k;
+        setSlot('slotYou', r.you ? 'down slam' : 'miss', r.you ? backHtml(myBack) : slow);
+        setSlot('slotOpp', r.opp ? 'down slam' : 'miss', r.opp ? backHtml(s.opp.back) : slow);
+        sfx.thud(); vibrate(20);
+        renderHint(); // no spoilers while the cards are face down
+        clearTimeout(flipTimer); clearTimeout(clashTimer);
+        flipTimer = setTimeout(() => {
+          if (!G || faceDown !== k) return;
+          faceDown = '';
+          const fl = (kind: string, back: string) => `<span class="fl"><span class="flF">${face(kind)}</span><span class="flB">${backHtml(back)}</span></span>`;
+          if (r.you) setSlot('slotYou', 'face flip', fl(r.you, myBack));
+          if (r.opp) setSlot('slotOpp', 'face flip', fl(r.opp, s.opp.back));
+          sfx.flip();
+          renderHint();
+          clashTimer = setTimeout(() => clash(r, k), 650);
+        }, FACE_DOWN_MS);
+      } else {
+        setSlot('slotYou', r.you ? 'face' : 'miss', r.you ? face(r.you) : slow);
+        setSlot('slotOpp', r.opp ? 'face' : 'miss', r.opp ? face(r.opp) : slow);
+      }
     }
     if (phase === 'result') {
       if (clashDone !== k) clash(r, k);
@@ -1048,10 +1186,15 @@ function renderHint() {
       : localSel ? (finePointer ? 'Press <kbd>Enter</kbd> to lock in, or pick another card' : 'Tap Lock in, or tap another card to change')
       : finePointer ? 'Press <kbd>1</kbd>–<kbd>0</kbd> or click a card' : 'Tap a card to pick it';
     if (s.round >= s.totalRounds && !s.you.locked) t = 'One card each. What have they played so far?';
+  } else if ((s.phase === 'reveal' || s.phase === 'result') && s.reveal && faceDown === `${s.gameId}:${s.reveal.n}`) {
+    t = s.reveal.youAuto ? 'Too slow · a random card was played for you…' : s.reveal.youGone ? 'Too slow · you lost this round…' : 'Both cards are in…';
   } else if ((s.phase === 'reveal' || s.phase === 'result') && s.reveal) {
     const r = s.reveal;
-    if (r.you && r.opp) t = r.you === r.opp ? `Both played ${cap(r.you)}` : beats(r.you, r.opp) ? `${cap(r.you)} ${VERB[r.you]} ${cap(r.opp)}` : `${cap(r.opp)} ${VERB[r.opp]} ${cap(r.you)}`;
+    if (r.youGone) t = `Too slow · a random card left your hand: <b>${cap(r.youGone)}</b>`;
+    else if (r.oppGone && !r.opp) t = `${esc(s.opp.name)} was too slow and lost a card: <b>${cap(r.oppGone)}</b>`;
+    else if (r.you && r.opp) t = r.you === r.opp ? `Both played ${cap(r.you)}` : beats(r.you, r.opp) ? `${cap(r.you)} ${VERB[r.you]} ${cap(r.opp)}` : `${cap(r.opp)} ${VERB[r.opp]} ${cap(r.you)}`;
     else t = !r.you && !r.opp ? 'Nobody locked in' : !r.you ? 'Lock in before the timer ends' : '';
+    if (r.youAuto && !r.youGone) t = `Too slow · ${cap(r.you)} was played for you · ` + t;
     if (s.phase === 'result' && s.round < s.totalRounds) t += ` · round ${s.round + 1} next`;
   }
   if ($('hint').dataset.h !== t) { $('hint').innerHTML = t; $('hint').dataset.h = t; }
@@ -1101,6 +1244,23 @@ function renderRounds() {
   if (before !== -1 && done.length > before) done[done.length - 1].classList.add('pop'); // the round that just finished
 }
 function bump(id: string) { const e = $(id); e.classList.remove('bump'); void e.offsetWidth; e.classList.add('bump'); }
+const MATCH_LABEL: Record<string, string> = { ranked: 'Ranked match', casual: 'Unranked match', room: 'Friend match', bot: 'Online match', practice: 'Practice', daily: 'Daily challenge' };
+/** "Opponent found": both players, their rank and whether they're connected, and the countdown. */
+function renderIntro(s: any, entering: boolean) {
+  if (entering) {
+    introSec = -1;
+    $('inTitle').textContent = s.mode === 'daily' ? 'DAILY CHALLENGE' : s.mode === 'practice' ? 'PRACTICE MATCH' : 'OPPONENT FOUND';
+    $('inMode').textContent = MATCH_LABEL[s.mode] || 'Match';
+    $('inMode').className = `inMode m-${s.mode}`;
+    const t = tierOf(me.rating);
+    $('inYou').innerHTML = `${avatarHtml(me.avatar, me.frame, 72)}<b>${esc(s.you.name)}</b><small>${tierBadge(t, 'xs')}${t.name} ${fmt(me.rating)}</small>${titleHtml(me.title)}<span class="inSt ok">✓ Connected</span>`;
+  }
+  const ot = tierOf(s.opp.rating || 1000);
+  const oppSt = s.opp.isBot ? '<span class="inSt ok">✓ Ready</span>' : s.opp.connected ? '<span class="inSt ok">✓ Connected</span>' : '<span class="inSt wait">Connecting…</span>';
+  const html = `${avatarHtml(s.opp.avatar, s.opp.frame, 72)}<b>${esc(s.opp.name)}</b><small>${s.opp.isBot ? '<span class="ttl bot">BOT</span>' : `${tierBadge(ot, 'xs')}${ot.name} ${fmt(s.opp.rating)}`}</small>${s.opp.isBot ? '' : titleHtml(s.opp.title)}${oppSt}`;
+  if ($('inOpp').dataset.h !== html) { $('inOpp').innerHTML = html; $('inOpp').dataset.h = html; }
+}
+
 function setSlot(id: string, cls: string, content: string) {
   const el = $(id);
   el.className = 'slot' + (cls ? ' ' + cls : '');
@@ -1116,7 +1276,10 @@ function setRing(frac: number) {
 /** What the opponent can still be holding, worked out from the cards they've played. */
 function renderTracker() {
   const played = [0, 0, 0];
-  for (const l of G.log) if (l.opp) played[KINDS.indexOf(l.opp)]! += 1;
+  for (const l of G.log) {
+    if (l.opp) played[KINDS.indexOf(l.opp)]! += 1;
+    if (l.oppGone) played[KINDS.indexOf(l.oppGone)]! += 1; // a card they lost to a missed turn
+  }
   const fours = [0, 1, 2].filter(f => played.every((p, x) => p <= (x === f ? 4 : 3)));
   const html = KINDS.map((kind, k) => {
     const left = fours.map(f => (k === f ? 4 : 3) - played[k]!);
@@ -1131,6 +1294,16 @@ function frame() {
   raf = requestAnimationFrame(frame);
   if (!G) return;
   const ms = remaining();
+  if (G.phase === 'intro') {
+    const sec = Math.max(1, Math.ceil(ms / 1000));
+    if (sec !== introSec) {
+      introSec = sec;
+      const el = $('inCount');
+      el.textContent = String(sec);
+      el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+      sfx.count(); vibrate(12);
+    }
+  }
   if (G.phase === 'pick') {
     const sec = Math.ceil(ms / 1000);
     const tm = $('timer');
@@ -1310,7 +1483,7 @@ function renderLog() {
     const lbl: Record<string, string> = { win: 'WIN', loss: 'LOSS', draw: 'DRAW' };
     let h = `<table><tr><th>#</th><th>You</th><th>${esc(G.opp.name)}</th><th></th></tr>`;
     log.slice().reverse().forEach((r: any, i: number) => {
-      h += `<tr class="${i === 0 ? 'new' : ''}"><td class="n">${r.n}</td><td>${r.you ? mini(r.you) : '<span class="none">—</span>'}</td><td>${r.opp ? mini(r.opp) : '<span class="none">—</span>'}</td><td><span class="res ${r.result}">${r.you ? lbl[r.result] : 'MISSED'}</span></td></tr>`;
+      h += `<tr class="${i === 0 ? 'new' : ''}"><td class="n">${r.n}</td><td>${r.you ? mini(r.you) + (r.youAuto ? '<small class="auto">auto</small>' : '') : r.youGone ? `<span class="gone">${mini(r.youGone)}</span>` : '<span class="none">—</span>'}</td><td>${r.opp ? mini(r.opp) + (r.oppAuto ? '<small class="auto">auto</small>' : '') : r.oppGone ? `<span class="gone">${mini(r.oppGone)}</span>` : '<span class="none">—</span>'}</td><td><span class="res ${r.result}">${r.you ? lbl[r.result] : 'MISSED'}</span></td></tr>`;
     });
     return h + '</table>';
   })() : '<div class="empty">No turns yet</div>';
@@ -1581,6 +1754,20 @@ function ownedTiles(kind: ItemKind, mine: Set<string>, size = 56) {
     return `<button class="own${on ? ' eq' : ''}" type="button" data-eq="${kind}" data-key="${esc(i.key)}" aria-pressed="${on}">${on ? '<span class="badgeOn">On</span>' : ''}${itemArt(i.id, size, me.avatar)}<b>${esc(nameOf(i.id))}</b><small>${on ? 'Equipped' : 'Tap to use'}</small></button>`;
   }).join('');
 }
+/** Rank rewards: every item a rank unlocks, owned ones ready to wear, the rest locked with how to get them. */
+const RANK_ORDER = ['silver', 'gold', 'diamond'] as const;
+const rankRewards = (rank: string) => ITEMS.filter(i => i.ach === rank);
+function rankRewardTiles(mine: Set<string>) {
+  return RANK_ORDER.map(r => {
+    const t = TIERS.find(x => x.key === r)!;
+    const tiles = rankRewards(r).map(i => {
+      if (!mine.has(i.id)) return `<div class="own locked" title="${esc(descOf(i.id))}">${itemArt(i.id, 48, me.avatar)}<b>${esc(nameOf(i.id))}</b><small>🔒 Reach ${t.name}</small></div>`;
+      const on = wearing(i.kind, i.key);
+      return `<button class="own${on ? ' eq' : ''}" type="button" data-eq="${i.kind}" data-key="${esc(i.key)}" aria-pressed="${on}">${on ? '<span class="badgeOn">On</span>' : ''}${itemArt(i.id, 48, me.avatar)}<b>${esc(nameOf(i.id))}</b><small>${on ? 'Equipped' : 'Tap to use'}</small></button>`;
+    }).join('');
+    return `<div class="rrHead">${tierBadge(t, 'sm')}<b>${t.name}</b><small>${fmt(t.min)} rating</small></div><div class="ownGrid">${tiles}</div>`;
+  }).join('');
+}
 const countOwned = (kind: ItemKind, mine: Set<string>) => itemsOf(kind).filter(i => mine.has(i.id) && i.key !== '').length;
 const moreLink = (tab: string, text: string, sub: string) => `<button class="moreLink" type="button" data-store="${tab}"><b>${text} ›</b><small>${sub}</small></button>`;
 function nextFree(kind: ItemKind) {
@@ -1615,10 +1802,11 @@ function renderLocker() {
   } else {
     html = `<div class="h4"><span>Your avatars</span><span class="gold">${countOwned('avatar', mine)} owned</span></div><div class="ownGrid">${ownedTiles('avatar', mine, 60)}</div>`
       + `<div class="h4"><span>Your auras</span><span class="gold">${countOwned('aura', mine)} owned</span></div><div class="ownGrid">${ownedTiles('aura', mine, 48)}</div>`
-      + `<div class="h4"><span>Title and win effect</span><span class="gold">Level road only</span></div>`
+      + `<div class="h4"><span>Title and win effect</span><span class="gold">Level road and ranks</span></div>`
       + (countOwned('title', mine) ? `<div class="ownGrid">${ownedTiles('title', mine)}</div>` : `<div class="infoRow"><span class="ttl">—</span><span><b>Title: none yet</b><small>${nextFree('title')}</small></span></div>`)
       + `<div class="ownGrid">${ownedTiles('fx', mine)}</div>`
-      + `<div class="moreRow">${moreLink('avatar', 'Store', 'More avatars and auras')}${moreLink('awards', 'Awards', 'Auras you earn')}</div>`;
+      + `<div class="h4"><span>Rank rewards</span><span class="gold">reach a rank in Ranked</span></div>${rankRewardTiles(mine)}`
+      + `<div class="moreRow">${moreLink('avatar', 'Store', 'More avatars and auras')}${moreLink('ranks', 'Ranks', 'How ranks work')}</div>`;
   }
   html += '<p class="muted small ctr">The Locker only shows what you own. New things appear here the moment you buy or unlock them.</p>';
   $('lockerSheetBody').innerHTML = html;
@@ -1630,7 +1818,7 @@ $('lockerSheet').addEventListener('click', (e: Event) => {
   const more = t.closest('[data-store]') as HTMLElement | null;
   if (more) {
     const where = more.dataset.store!;
-    if (where === 'road') openSheet('roadSheet'); else if (where === 'awards') openSheet('statsSheet', 'awards'); else openSheet('storeSheet', where);
+    if (where === 'road') openSheet('roadSheet'); else if (where === 'awards') openSheet('statsSheet', 'awards'); else if (where === 'ranks') openSheet('ranksSheet', 'ranks'); else openSheet('storeSheet', where);
     return;
   }
   const sl = t.closest('[data-slot]') as HTMLElement | null;

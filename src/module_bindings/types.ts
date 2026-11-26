@@ -423,6 +423,10 @@ export const Game = __t.object("Game", {
   xp1: __t.u32(),
   coins0: __t.u32(),
   coins1: __t.u32(),
+  gone0: __t.i8(),
+  gone1: __t.i8(),
+  auto0: __t.bool(),
+  auto1: __t.bool(),
 });
 export type Game = __Infer<typeof Game>;
 
@@ -462,6 +466,10 @@ export const GameView = __t.object("GameView", {
   revealYou: __t.i8(),
   revealOpp: __t.i8(),
   revealResult: __t.string(),
+  revealYouGone: __t.i8(),
+  revealOppGone: __t.i8(),
+  revealYouAuto: __t.bool(),
+  revealOppAuto: __t.bool(),
   over: __t.bool(),
   endResult: __t.string(),
   endReason: __t.string(),
@@ -853,6 +861,10 @@ export const RoundLog = __t.object("RoundLog", {
   c0: __t.i8(),
   c1: __t.i8(),
   winner: __t.i8(),
+  g0: __t.i8(),
+  g1: __t.i8(),
+  a0: __t.bool(),
+  a1: __t.bool(),
 });
 export type RoundLog = __Infer<typeof RoundLog>;
 
@@ -861,6 +873,10 @@ export const RoundView = __t.object("RoundView", {
   you: __t.i8(),
   opp: __t.i8(),
   result: __t.string(),
+  youGone: __t.i8(),
+  oppGone: __t.i8(),
+  youAuto: __t.bool(),
+  oppAuto: __t.bool(),
 });
 export type RoundView = __Infer<typeof RoundView>;
 
