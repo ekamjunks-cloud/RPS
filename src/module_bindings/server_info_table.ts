@@ -10,8 +10,11 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default {
-  avatar: __t.string(),
-  frame: __t.string(),
-  skin: __t.string(),
-};
+export default __t.row({
+  maintenance: __t.bool(),
+  message: __t.string(),
+  day: __t.u32(),
+  week: __t.u32(),
+  dealItem: __t.string().name("deal_item"),
+  dealPrice: __t.u32().name("deal_price"),
+});

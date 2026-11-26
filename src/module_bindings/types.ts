@@ -24,6 +24,68 @@ export const AchievementView = __t.object("AchievementView", {
 });
 export type AchievementView = __Infer<typeof AchievementView>;
 
+export const AdminBug = __t.object("AdminBug", {
+  id: __t.u64(),
+  at: __t.timestamp(),
+  name: __t.string(),
+  text: __t.string(),
+  version: __t.string(),
+  device: __t.string(),
+});
+export type AdminBug = __Infer<typeof AdminBug>;
+
+export const AdminBugs = __t.object("AdminBugs", {});
+export type AdminBugs = __Infer<typeof AdminBugs>;
+
+export const AdminDay = __t.object("AdminDay", {
+  day: __t.u32(),
+  matches: __t.u32(),
+  newPlayers: __t.u32(),
+});
+export type AdminDay = __Infer<typeof AdminDay>;
+
+export const AdminDays = __t.object("AdminDays", {});
+export type AdminDays = __Infer<typeof AdminDays>;
+
+export const AdminReport = __t.object("AdminReport", {
+  id: __t.u64(),
+  at: __t.timestamp(),
+  reporter: __t.string(),
+  reported: __t.string(),
+  reason: __t.string(),
+  reportsAgainst: __t.u32(),
+  banned: __t.bool(),
+});
+export type AdminReport = __Infer<typeof AdminReport>;
+
+export const AdminReports = __t.object("AdminReports", {});
+export type AdminReports = __Infer<typeof AdminReports>;
+
+export const AdminSummary = __t.object("AdminSummary", {});
+export type AdminSummary = __Infer<typeof AdminSummary>;
+
+export const AdminSummaryRow = __t.object("AdminSummaryRow", {
+  players: __t.u32(),
+  accounts: __t.u32(),
+  online: __t.u32(),
+  inMatch: __t.u32(),
+  activeToday: __t.u32(),
+  banned: __t.u32(),
+  coinsInWallets: __t.u64(),
+});
+export type AdminSummaryRow = __Infer<typeof AdminSummaryRow>;
+
+export const Bug = __t.object("Bug", {
+  id: __t.u64(),
+  identity: __t.identity(),
+  name: __t.string(),
+  text: __t.string(),
+  version: __t.string(),
+  device: __t.string(),
+  at: __t.timestamp(),
+});
+export type Bug = __Infer<typeof Bug>;
+
 export const ChatMsg = __t.object("ChatMsg", {
   id: __t.u64(),
   gameId: __t.u64(),
@@ -60,6 +122,14 @@ export const DailyView = __t.object("DailyView", {
 });
 export type DailyView = __Infer<typeof DailyView>;
 
+export const DayCount = __t.object("DayCount", {
+  day: __t.u32(),
+  matches: __t.u32(),
+  newPlayers: __t.u32(),
+  board: __t.u8(),
+});
+export type DayCount = __Infer<typeof DayCount>;
+
 export const Friend = __t.object("Friend", {
   id: __t.u64(),
   owner: __t.identity(),
@@ -68,6 +138,19 @@ export const Friend = __t.object("Friend", {
   at: __t.timestamp(),
 });
 export type Friend = __Infer<typeof Friend>;
+
+export const FriendBoardRow = __t.object("FriendBoardRow", {
+  identity: __t.identity(),
+  name: __t.string(),
+  me: __t.bool(),
+  points: __t.u32(),
+  rating: __t.i32(),
+  ranked: __t.bool(),
+  avatar: __t.string(),
+  frame: __t.string(),
+  title: __t.string(),
+});
+export type FriendBoardRow = __Infer<typeof FriendBoardRow>;
 
 export const FriendView = __t.object("FriendView", {
   identity: __t.identity(),
@@ -80,6 +163,9 @@ export const FriendView = __t.object("FriendView", {
   frame: __t.string(),
 });
 export type FriendView = __Infer<typeof FriendView>;
+
+export const FriendsBoard = __t.object("FriendsBoard", {});
+export type FriendsBoard = __Infer<typeof FriendsBoard>;
 
 export const Game = __t.object("Game", {
   id: __t.u64(),
@@ -118,6 +204,8 @@ export const Game = __t.object("Game", {
   rematch1: __t.bool(),
   xp0: __t.u32(),
   xp1: __t.u32(),
+  coins0: __t.u32(),
+  coins1: __t.u32(),
 });
 export type Game = __Infer<typeof Game>;
 
@@ -171,6 +259,11 @@ export const GameView = __t.object("GameView", {
   oppFriend: __t.string(),
   watchers: __t.u32(),
   xpGain: __t.u32(),
+  coinGain: __t.u32(),
+  oppBack: __t.string(),
+  oppColor: __t.string(),
+  oppFx: __t.string(),
+  oppTitle: __t.string(),
 });
 export type GameView = __Infer<typeof GameView>;
 
@@ -255,6 +348,7 @@ export const LeaderRow = __t.object("LeaderRow", {
   rating: __t.i32(),
   avatar: __t.string(),
   frame: __t.string(),
+  title: __t.string(),
 });
 export type LeaderRow = __Infer<typeof LeaderRow>;
 
@@ -266,6 +360,12 @@ export const Look = __t.object("Look", {
   avatar: __t.string(),
   frame: __t.string(),
   skin: __t.string(),
+  back: __t.string(),
+  color: __t.string(),
+  fx: __t.string(),
+  title: __t.string(),
+  reactions: __t.string(),
+  phrases: __t.string(),
 });
 export type Look = __Infer<typeof Look>;
 
@@ -300,8 +400,18 @@ export const Me = __t.object("Me", {
   avatar: __t.string(),
   frame: __t.string(),
   skin: __t.string(),
+  back: __t.string(),
+  color: __t.string(),
+  fx: __t.string(),
+  title: __t.string(),
+  reactions: __t.string(),
+  phrases: __t.string(),
   watching: __t.string(),
   allSkins: __t.bool(),
+  coins: __t.u32(),
+  casual: __t.bool(),
+  banned: __t.bool(),
+  isAdmin: __t.bool(),
 });
 export type Me = __Infer<typeof Me>;
 
@@ -326,17 +436,53 @@ export type MyHistory = __Infer<typeof MyHistory>;
 export const MyInvites = __t.object("MyInvites", {});
 export type MyInvites = __Infer<typeof MyInvites>;
 
+export const MyItems = __t.object("MyItems", {});
+export type MyItems = __Infer<typeof MyItems>;
+
 export const MyLog = __t.object("MyLog", {});
 export type MyLog = __Infer<typeof MyLog>;
 
 export const MyPlayer = __t.object("MyPlayer", {});
 export type MyPlayer = __Infer<typeof MyPlayer>;
 
+export const MyRank = __t.object("MyRank", {});
+export type MyRank = __Infer<typeof MyRank>;
+
+export const MyRankRow = __t.object("MyRankRow", {
+  weekRank: __t.u32(),
+  weekPoints: __t.u32(),
+  weekPlayers: __t.u32(),
+  monthRank: __t.u32(),
+  monthPlayers: __t.u32(),
+});
+export type MyRankRow = __Infer<typeof MyRankRow>;
+
 export const MyStats = __t.object("MyStats", {});
 export type MyStats = __Infer<typeof MyStats>;
 
 export const MyTransfer = __t.object("MyTransfer", {});
 export type MyTransfer = __Infer<typeof MyTransfer>;
+
+export const Notice = __t.object("Notice", {
+  id: __t.u8(),
+  maintenance: __t.bool(),
+  message: __t.string(),
+  at: __t.timestamp(),
+});
+export type Notice = __Infer<typeof Notice>;
+
+export const Owned = __t.object("Owned", {
+  id: __t.u64(),
+  identity: __t.identity(),
+  item: __t.string(),
+  at: __t.timestamp(),
+});
+export type Owned = __Infer<typeof Owned>;
+
+export const OwnedItem = __t.object("OwnedItem", {
+  item: __t.string(),
+});
+export type OwnedItem = __Infer<typeof OwnedItem>;
 
 export const PairStat = __t.object("PairStat", {
   key: __t.string(),
@@ -362,6 +508,7 @@ export const Player = __t.object("Player", {
   roomCode: __t.string(),
   createdAt: __t.timestamp(),
   lastSeen: __t.timestamp(),
+  banned: __t.bool(),
 });
 export type Player = __Infer<typeof Player>;
 
@@ -369,6 +516,7 @@ export const QueueEntry = __t.object("QueueEntry", {
   identity: __t.identity(),
   rating: __t.i32(),
   joinedAt: __t.timestamp(),
+  casual: __t.bool(),
 });
 export type QueueEntry = __Infer<typeof QueueEntry>;
 
@@ -426,6 +574,8 @@ export const Season = __t.object("Season", {
   key: __t.u32(),
   champ: __t.string(),
   champRating: __t.i32(),
+  week: __t.u32(),
+  day: __t.u32(),
 });
 export type Season = __Infer<typeof Season>;
 
@@ -438,6 +588,19 @@ export const SeasonView = __t.object("SeasonView", {
   champRating: __t.i32(),
 });
 export type SeasonView = __Infer<typeof SeasonView>;
+
+export const ServerInfo = __t.object("ServerInfo", {});
+export type ServerInfo = __Infer<typeof ServerInfo>;
+
+export const ServerInfoRow = __t.object("ServerInfoRow", {
+  maintenance: __t.bool(),
+  message: __t.string(),
+  day: __t.u32(),
+  week: __t.u32(),
+  dealItem: __t.string(),
+  dealPrice: __t.u32(),
+});
+export type ServerInfoRow = __Infer<typeof ServerInfoRow>;
 
 export const Stats = __t.object("Stats", {
   identity: __t.identity(),
@@ -508,6 +671,15 @@ export const TransferCode = __t.object("TransferCode", {
 });
 export type TransferCode = __Infer<typeof TransferCode>;
 
+export const Wallet = __t.object("Wallet", {
+  identity: __t.identity(),
+  coins: __t.u32(),
+  earned: __t.u32(),
+  spent: __t.u32(),
+  firstWinDay: __t.u32(),
+});
+export type Wallet = __Infer<typeof Wallet>;
+
 export const WatchGame = __t.object("WatchGame", {});
 export type WatchGame = __Infer<typeof WatchGame>;
 
@@ -554,4 +726,26 @@ export const Watcher = __t.object("Watcher", {
   since: __t.timestamp(),
 });
 export type Watcher = __Infer<typeof Watcher>;
+
+export const Weekly = __t.object("Weekly", {
+  identity: __t.identity(),
+  name: __t.string(),
+  points: __t.u32(),
+  at: __t.timestamp(),
+  board: __t.u8(),
+});
+export type Weekly = __Infer<typeof Weekly>;
+
+export const WeeklyBoard = __t.object("WeeklyBoard", {});
+export type WeeklyBoard = __Infer<typeof WeeklyBoard>;
+
+export const WeeklyRow = __t.object("WeeklyRow", {
+  identity: __t.identity(),
+  name: __t.string(),
+  points: __t.u32(),
+  avatar: __t.string(),
+  frame: __t.string(),
+  title: __t.string(),
+});
+export type WeeklyRow = __Infer<typeof WeeklyRow>;
 

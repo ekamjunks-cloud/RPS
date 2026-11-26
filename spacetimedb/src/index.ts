@@ -7,6 +7,10 @@
 import { ScheduleAt, Timestamp, type Identity } from 'spacetimedb';
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 import { config } from './config';
+import {
+  ITEM, ITEMS, itemOf, REACTIONS, PHRASES, REACTION_SLOTS, PHRASE_SLOTS, DEFAULT_REACTIONS, DEFAULT_PHRASES,
+  COINS, COIN_MULT, BIG_ACHIEVEMENTS, FOR_SALE, type ItemKind,
+} from './catalog';
 
 // ---------- settings ----------
 const TIMES = { prep: 20000, readyGo: 600, banner: 1600, pick: 10000, reveal: 3000, result: 3000 }; // ms
@@ -24,14 +28,12 @@ const HISTORY_KEEP = 20;         // matches kept in each player's history
 const GOLD = 1200, DIAMOND = 1350;
 const DAILY_STAT_KEEP_DAYS = 3;
 
-// looks: keep in step with AVATARS, FRAMES and SKINS in src/social.ts
-const AVATARS = ['😎', '🤖', '🦊', '🐼', '🐯', '🦁', '🐸', '🐙', '🦄', '🐲', '👻', '👽', '🤠', '🥷', '🧙', '🧛', '🐵', '🐧', '🦈', '🌵', '🍕', '⚡', '🌙', '🔥'];
-const FRAME_UNLOCK: Record<string, string> = { '': '', rookie: 'first_win', fire: 'streak5', gold: 'gold', diamond: 'diamond', daily: 'daily7' };
-// card styles unlock by level: the long-term grind. Keep in step with SKINS in src/social.ts.
-const SKIN_LEVEL: Record<string, number> = { classic: 1, neon: 5, wood: 10, pixel: 15, ice: 20, lava: 30, galaxy: 40, gold: 50 };
 // XP for a finished match, before the mode multiplier. Forfeits and disconnects give the winner a little, the loser nothing.
 const XP = { win: 30, draw: 15, loss: 10, walkover: 10, dailyBonus: 25 };
-const XP_MULT: Record<string, number> = { ranked: 1.5, room: 1, daily: 1, bot: 0.5, practice: 0.5 };
+const XP_MULT: Record<string, number> = { ranked: 1.5, casual: 1, room: 1, daily: 1, bot: 0.5, practice: 0.5 };
+const BUG_REPORTS_PER_DAY = 5;
+// looks saved before custom avatars and auras existed are shown as their nearest new equivalent
+const OLD_AURA: Record<string, string> = { fire: 'blaze', daily: 'sunrise' };
 /** Level from total XP. Level n needs 100 + 25 × (n − 1) XP to reach level n + 1. */
 function levelOf(xp: number) {
   let level = 1, need = 100;
@@ -41,13 +43,7 @@ function levelOf(xp: number) {
 const FRIENDS_MAX = 100;
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 
-// chat: only these emoji and phrases can be sent, so there is no free typing between strangers.
-// Keep both lists in step with EMOJIS and PHRASES in src/main.ts.
-const EMOJIS = ['👍', '😂', '😎', '😮', '😤', '😭', '🔥', '👏', '🤝', '🤔', '😈', '🙈', '🪨', '📄', '✂️', '🤞', '🎁', '😇'];
-const PHRASES = [
-  'Good luck!', 'Nice one!', 'Well played', 'gg', 'Thanks!', 'Oops 😅', 'Rematch?',
-  'Rock is coming 🪨', 'Paper next 📄', 'Scissors time ✂️', 'I promise 🤞', 'Trust me 😇', 'Gift for you 🎁', 'Too easy 😎',
-];
+// chat: only the reactions and phrases in src/catalog.ts can be sent, so there is no free typing between strangers.
 const CHAT_KEEP = 40;            // messages kept per game
 const CHAT_BURST = 4;            // at most this many messages...
 const CHAT_BURST_MS = 4000;      // ...in this long, per player
@@ -77,6 +73,7 @@ const player = table(
     roomCode: t.string(),
     createdAt: t.timestamp(),
     lastSeen: t.timestamp(),
+    banned: t.bool().default(false), // suspended by an admin: can't play online or chat
   }
 );
 
@@ -84,7 +81,7 @@ const game = table(
   { name: 'game' },
   {
     id: t.u64().primaryKey().autoInc(),
-    mode: t.string(),               // 'ranked' | 'room' | 'bot' | 'practice'
+    mode: t.string(),               // 'ranked' | 'casual' | 'room' | 'bot' | 'practice' | 'daily'
     rated: t.bool(),
     p0: t.identity(),
     p1: t.identity(),               // ignored when p1Bot
@@ -119,6 +116,8 @@ const game = table(
     rematch1: t.bool().default(false),
     xp0: t.u32().default(0),           // XP each player earned from this match
     xp1: t.u32().default(0),
+    coins0: t.u32().default(0),        // coins each player earned from this match (bonuses included)
+    coins1: t.u32().default(0),
   }
 );
 
@@ -162,6 +161,7 @@ const queueEntry = table(
     identity: t.identity().primaryKey(),
     rating: t.i32(),
     joinedAt: t.timestamp(),
+    casual: t.bool().default(false), // unranked queue: only matched with other unranked players
   }
 );
 
@@ -310,7 +310,7 @@ const achievement = table(
 // and the leaderboard starts empty.
 const season = table(
   { name: 'season' },
-  { id: t.u8().primaryKey(), key: t.u32(), champ: t.string(), champRating: t.i32() }
+  { id: t.u8().primaryKey(), key: t.u32(), champ: t.string(), champRating: t.i32(), week: t.u32().default(0), day: t.u32().default(0) }
 );
 
 // How many people played and beat each day's challenge.
@@ -319,10 +319,57 @@ const dailyStat = table(
   { day: t.u32().primaryKey(), plays: t.u32(), wins: t.u32(), board: t.u8().index('btree') }
 );
 
-// How a player shows up to others: emoji avatar, avatar frame and card skin.
+// How a player shows up to others, and their in-match chat loadout. `frame` is the aura.
 const look = table(
   { name: 'look' },
-  { identity: t.identity().primaryKey(), avatar: t.string(), frame: t.string(), skin: t.string() }
+  {
+    identity: t.identity().primaryKey(), avatar: t.string(), frame: t.string(), skin: t.string(),
+    back: t.string().default('classic'),
+    color: t.string().default('green'),
+    fx: t.string().default('confetti'),
+    title: t.string().default(''),
+    reactions: t.string().default(DEFAULT_REACTIONS), // comma-separated reaction ids, up to 6
+    phrases: t.string().default(DEFAULT_PHRASES),     // '|'-separated phrases, up to 4
+  }
+);
+
+// Coins. Kept on the server, so they are never lost. Nobody can buy coins (yet): every coin is earned by playing.
+const wallet = table(
+  { name: 'wallet' },
+  { identity: t.identity().primaryKey(), coins: t.u32(), earned: t.u32(), spent: t.u32(), firstWinDay: t.u32() }
+);
+
+// Things bought in the Store. Free, Level-road and achievement items are worked out, not stored.
+const owned = table(
+  { name: 'owned' },
+  { id: t.u64().primaryKey().autoInc(), identity: t.identity().index('btree'), item: t.string(), at: t.timestamp() }
+);
+
+// This week's points (ranked only: 3 a win, 1 a draw). Emptied every Monday 00:00 UTC.
+const weekly = table(
+  { name: 'weekly' },
+  { identity: t.identity().primaryKey(), name: t.string(), points: t.u32(), at: t.timestamp(), board: t.u8().index('btree') }
+);
+
+// "Report a bug" from Settings, for you to read on the admin page.
+const bug = table(
+  { name: 'bug' },
+  {
+    id: t.u64().primaryKey().autoInc(), identity: t.identity().index('btree'), name: t.string(),
+    text: t.string(), version: t.string(), device: t.string(), at: t.timestamp(),
+  }
+);
+
+// Daily numbers for the admin page.
+const dayCount = table(
+  { name: 'day_count' },
+  { day: t.u32().primaryKey(), matches: t.u32(), newPlayers: t.u32(), board: t.u8().index('btree') }
+);
+
+// A message the admin page can show everyone, e.g. planned maintenance.
+const notice = table(
+  { name: 'notice' },
+  { id: t.u8().primaryKey(), maintenance: t.bool(), message: t.string(), at: t.timestamp() }
 );
 
 // Friendships, two rows each: owner's view of other. 'out' = owner asked, 'in' = other asked, 'friends'.
@@ -372,6 +419,7 @@ const watcher = table(
 const spacetimedb = schema({
   player, game, handCard, roundLog, gameTimer, queueEntry, queueTimer, room, pairStat, ladder, matchResult, rngState, sweepTimer, transfer, chatMsg,
   stats, history, achievement, season, dailyStat, look, friend, invite, report, watcher,
+  wallet, owned, weekly, bug, dayCount, notice,
 });
 export default spacetimedb;
 
@@ -464,7 +512,7 @@ function postChat(ctx: Ctx, gameId: bigint, seat: number, kind: string, body: st
 /** Now and then the bot reacts to how a round went. */
 function botReact(ctx: Ctx, g: GameRow) {
   if (!g.p1Bot || ctx.random() > 0.3) return;
-  const pool = g.lastWinner === 1 ? ['😎', '😈', '🔥'] : g.lastWinner === 0 ? ['😤', '😭', '😮'] : ['🤔', '🤝'];
+  const pool = g.lastWinner === 1 ? ['cool', 'evil', 'fire'] : g.lastWinner === 0 ? ['grr', 'sob', 'whoa'] : ['hmm', 'nice'];
   postChat(ctx, g.id, 1, 'emoji', pool[ctx.random.integerInRange(0, pool.length - 1)]!);
 }
 
@@ -487,13 +535,66 @@ function statsOf(ctx: Ctx, who: Identity): StatsRow {
 function saveStats(ctx: Ctx, s: StatsRow) {
   if (ctx.db.stats.identity.find(s.identity)) ctx.db.stats.identity.update(s); else ctx.db.stats.insert(s);
 }
-function award(ctx: Ctx, who: Identity, key: string) {
-  for (const a of ctx.db.achievement.identity.filter(who)) if (a.key === key) return;
+/** Gives an achievement (once) and its coins. Returns the coins paid, 0 if it was already earned. */
+function award(ctx: Ctx, who: Identity, key: string): number {
+  for (const a of ctx.db.achievement.identity.filter(who)) if (a.key === key) return 0;
   ctx.db.achievement.insert({ id: 0n, identity: who, key, at: ctx.timestamp });
+  const coins = BIG_ACHIEVEMENTS.includes(key) ? COINS.achBig : COINS.ach;
+  addCoins(ctx, who, coins);
+  return coins;
 }
-/** Removes a player's stats, history and achievements. */
+
+// ---------- coins and owned items ----------
+type WalletRow = NonNullable<ReturnType<Ctx['db']['wallet']['identity']['find']>>;
+/** A player's wallet. Everyone starts with the welcome gift, including players from before coins existed. */
+function walletOf(ctx: Ctx, who: Identity): WalletRow {
+  return ctx.db.wallet.identity.find(who) ?? { identity: who, coins: COINS.welcome, earned: COINS.welcome, spent: 0, firstWinDay: 0 };
+}
+function saveWallet(ctx: Ctx, w: WalletRow) {
+  if (ctx.db.wallet.identity.find(w.identity)) ctx.db.wallet.identity.update(w); else ctx.db.wallet.insert(w);
+}
+function addCoins(ctx: Ctx, who: Identity, n: number) {
+  if (n <= 0) return;
+  const w = walletOf(ctx, who);
+  saveWallet(ctx, { ...w, coins: w.coins + n, earned: w.earned + n });
+}
+/** Coins for reaching each level from `from`+1 to `to`: 100 a level, 300 on every fifth. */
+function levelCoins(from: number, to: number) {
+  let n = 0;
+  for (let l = from + 1; l <= to; l++) n += l % 5 === 0 ? COINS.level5 : COINS.level;
+  return n;
+}
+const isVip = (who: Identity) => config.allSkins.includes(who.toHexString().replace(/^0x/, '').toLowerCase());
+const isAdmin = (who: Identity) => config.admins.includes(who.toHexString().replace(/^0x/, '').toLowerCase());
+const levelFor = (ctx: Ctx, who: Identity) => levelOf(statsOf(ctx, who).xp).level;
+
+/** Every item id this player owns: free ones, ones their level or achievements unlock, and ones they bought. */
+function ownedItems(ctx: Ctx, who: Identity): Set<string> {
+  if (isVip(who)) return new Set(ITEMS.map(i => i.id));
+  const level = levelFor(ctx, who);
+  const achs = new Set(Array.from(ctx.db.achievement.identity.filter(who), a => a.key));
+  const out = new Set<string>();
+  for (const i of ITEMS) {
+    if (i.free || (i.level !== undefined && level >= i.level) || (i.ach && achs.has(i.ach))) out.add(i.id);
+  }
+  for (const o of ctx.db.owned.identity.filter(who)) out.add(o.item);
+  return out;
+}
+
+/** The Store's daily deal: one item a day, 20% off, the same for everyone. */
+function dealOf(day: number) {
+  const item = FOR_SALE[Number(mix64(BigInt(day) * 0x2545f491n) % BigInt(FOR_SALE.length))]!;
+  return { item, price: Math.round(item.price! * (1 - COINS.dealOff)) };
+}
+/** The week number for the weekly leaderboard: weeks start on Monday 00:00 UTC. */
+const weekOf = (day: number) => Math.floor((day + 3) / 7);
+
+/** Removes a player's stats, history, achievements, coins, items and leaderboard places. */
 function dropProgress(ctx: Ctx, who: Identity) {
   ctx.db.stats.identity.delete(who);
+  ctx.db.wallet.identity.delete(who);
+  for (const o of Array.from(ctx.db.owned.identity.filter(who))) ctx.db.owned.id.delete(o.id);
+  ctx.db.weekly.identity.delete(who);
   for (const h of Array.from(ctx.db.history.identity.filter(who))) ctx.db.history.id.delete(h.id);
   for (const x of Array.from(ctx.db.achievement.identity.filter(who))) ctx.db.achievement.id.delete(x.id);
   ctx.db.look.identity.delete(who);
@@ -502,6 +603,13 @@ function dropProgress(ctx: Ctx, who: Identity) {
   for (const f of Array.from(ctx.db.friend.other.filter(who))) ctx.db.friend.id.delete(f.id);
   for (const i of Array.from(ctx.db.invite.from.filter(who))) ctx.db.invite.id.delete(i.id);
   for (const i of Array.from(ctx.db.invite.to.filter(who))) ctx.db.invite.id.delete(i.id);
+}
+/** Counts matches and new players for today, for the admin page. */
+function bumpDay(ctx: Ctx, matches: number, newPlayers: number) {
+  const day = dayOf(ctx.timestamp);
+  const row = ctx.db.dayCount.day.find(day);
+  if (row) ctx.db.dayCount.day.update({ ...row, matches: row.matches + matches, newPlayers: row.newPlayers + newPlayers });
+  else ctx.db.dayCount.insert({ day, matches, newPlayers, board: 0 });
 }
 function bumpDaily(ctx: Ctx, day: number, plays: number, wins: number) {
   const row = ctx.db.dailyStat.day.find(day);
@@ -512,8 +620,17 @@ function bumpDaily(ctx: Ctx, day: number, plays: number, wins: number) {
 /** Starts a new season when the month has changed: ratings move halfway back to 1000 and the leaderboard empties. */
 function checkSeason(ctx: Ctx) {
   const key = seasonKeyOf(ctx.timestamp);
-  const row = ctx.db.season.id.find(0);
-  if (!row) { ctx.db.season.insert({ id: 0, key, champ: '', champRating: 0 }); return; }
+  const day = dayOf(ctx.timestamp);
+  const week = weekOf(day);
+  let row = ctx.db.season.id.find(0);
+  if (!row) { ctx.db.season.insert({ id: 0, key, champ: '', champRating: 0, week, day }); return; }
+  if (row.day !== day) { row = { ...row, day }; ctx.db.season.id.update(row); }
+  if (row.week !== week) {
+    // a new week: the weekly board starts empty
+    for (const w of Array.from(ctx.db.weekly.iter())) ctx.db.weekly.identity.delete(w.identity);
+    row = { ...row, week };
+    ctx.db.season.id.update(row);
+  }
   if (row.key === key) return;
   const ranked = Array.from(ctx.db.ladder.iter()).sort((a, b) => b.rating - a.rating);
   for (const s of Array.from(ctx.db.stats.iter())) if (s.lastSeason !== 0) ctx.db.stats.identity.update({ ...s, lastSeason: 0 });
@@ -524,7 +641,7 @@ function checkSeason(ctx: Ctx) {
     ctx.db.ladder.identity.delete(l.identity);
   }
   const top = ranked[0];
-  ctx.db.season.id.update({ id: 0, key, champ: top ? top.name : '', champRating: top ? top.rating : 0 });
+  ctx.db.season.id.update({ ...row, key, champ: top ? top.name : '', champRating: top ? top.rating : 0 });
 }
 
 /** Saves a finished match to a player's history and stats, and hands out any achievements it earned. */
@@ -572,7 +689,25 @@ function recordMatch(ctx: Ctx, g: GameRow, seat: number, p: PlayerRow, ratingCha
   }
   saveStats(ctx, next);
 
-  const got = (key: string) => award(ctx, p.identity, key);
+  // coins: the match itself, the first win of the day, the daily challenge and any level-ups
+  const today = dayOf(ctx.timestamp);
+  const w = walletOf(ctx, p.identity);
+  let coins = Math.round((full ? (won ? COINS.win : lost ? COINS.loss : COINS.draw) : won ? COINS.walkover : 0) * (COIN_MULT[g.mode] ?? 1));
+  let firstWinDay = w.firstWinDay;
+  if (won && w.firstWinDay !== today) { coins += COINS.firstWin; firstWinDay = today; }
+  if (g.mode === 'daily' && won) coins += COINS.dailyWin;
+  coins += levelCoins(levelOf(s.xp).level, levelOf(next.xp).level);
+  saveWallet(ctx, { ...w, coins: w.coins + coins, earned: w.earned + coins, firstWinDay });
+
+  // the weekly board: ranked matches only
+  const pts = !g.rated ? 0 : won ? 3 : full && !lost ? 1 : 0;
+  if (pts > 0) {
+    const wk = ctx.db.weekly.identity.find(p.identity);
+    if (wk) ctx.db.weekly.identity.update({ ...wk, name: p.name, points: wk.points + pts, at: ctx.timestamp });
+    else ctx.db.weekly.insert({ identity: p.identity, name: p.name, points: pts, at: ctx.timestamp, board: 0 });
+  }
+
+  const got = (key: string) => { coins += award(ctx, p.identity, key); };
   if (won) got('first_win');
   if (perfect) got('perfect');
   let a = 0, b = 0, behind = 0;
@@ -592,6 +727,7 @@ function recordMatch(ctx: Ctx, g: GameRow, seat: number, p: PlayerRow, ratingCha
   if (g.rated && p.rating >= DIAMOND) got('diamond');
   if (g.mode === 'room' && g.reason === 'points') got('friend');
   if (g.mode === 'daily' && won) got('daily_win');
+  if (seat === 0) g.coins0 = coins; else g.coins1 = coins;
 }
 
 /** A random-number source that gives the same numbers for the same seed (the daily challenge deal). */
@@ -615,7 +751,7 @@ function startGame(ctx: Ctx, a: PlayerRow, b: PlayerRow | undefined, mode: strin
     last0: NONE, last1: NONE, lastWinner: -1,
     over: false, winner: -1, reason: '', ratingDelta: 0,
     conn0: a.conns > 0, conn1: b ? b.conns > 0 : true, dc0: EPOCH, dc1: EPOCH,
-    lock0: false, lock1: false, rematch0: false, rematch1: false, xp0: 0, xp1: 0,
+    lock0: false, lock1: false, rematch0: false, rematch1: false, xp0: 0, xp1: 0, coins0: 0, coins1: 0,
   });
   // deal: 3 of two kinds and 4 of a third, shuffled
   for (const seat of [0, 1]) {
@@ -756,9 +892,10 @@ function finish(ctx: Ctx, g: GameRow, reason: string, forcedWinner?: number) {
     id: 0n, at: ctx.timestamp, mode: g.mode, rated: g.rated, name0: g.name0, name1: g.name1,
     winner, reason, score0: g.score0, score1: g.score1, rounds, ratingDelta: delta,
   });
+  bumpDay(ctx, 1, 0);
   addTimer(ctx, g, 'cleanup', CLEANUP_MS);
   if (g.p1Bot && reason === 'points' && ctx.random() < 0.6) {
-    const lines = winner === 1 ? ['gg', 'Too easy 😎'] : ['gg', 'Well played', 'Nice one!'];
+    const lines = winner === 1 ? ['gg', 'Too easy'] : ['gg', 'Well played', 'Nice one!'];
     postChat(ctx, g.id, 1, 'phrase', lines[ctx.random.integerInRange(0, lines.length - 1)]!);
   }
 }
@@ -851,7 +988,7 @@ function tryMatch(ctx: Ctx, who: Identity): boolean {
   const waited = (e: { joinedAt: Timestamp }) => Number(ctx.timestamp.microsSinceUnixEpoch - e.joinedAt.microsSinceUnixEpoch) / 1e6;
   let best: typeof mine | undefined;
   for (const e of ctx.db.queueEntry.iter()) {
-    if (e.identity.isEqual(who)) continue;
+    if (e.identity.isEqual(who) || e.casual !== mine.casual) continue;
     const gap = Math.abs(e.rating - mine.rating);
     if (gap > 150 + 50 * Math.max(waited(mine), waited(e))) continue;
     if (!best || gap < Math.abs(best.rating - mine.rating)) best = e;
@@ -860,7 +997,7 @@ function tryMatch(ctx: Ctx, who: Identity): boolean {
   const a = ctx.db.player.identity.find(best.identity), b = ctx.db.player.identity.find(who);
   dequeue(ctx, best.identity); dequeue(ctx, who);
   if (!a || !b) return false;
-  startGame(ctx, a, b, 'ranked'); // the longer-waiting player is seat 0
+  startGame(ctx, a, b, mine.casual ? 'casual' : 'ranked'); // the longer-waiting player is seat 0
   return true;
 }
 
@@ -932,6 +1069,9 @@ export const claimTransfer = spacetimedb.reducer({ code: t.string() }, (ctx, { c
   for (const x of Array.from(ctx.db.achievement.identity.filter(guest.identity))) ctx.db.achievement.id.update({ ...x, identity: p.identity });
   const gl = ctx.db.look.identity.find(guest.identity);
   if (gl) { ctx.db.look.identity.delete(gl.identity); ctx.db.look.insert({ ...gl, identity: p.identity }); }
+  const gw = ctx.db.wallet.identity.find(guest.identity);
+  if (gw) { ctx.db.wallet.identity.delete(gw.identity); ctx.db.wallet.insert({ ...gw, identity: p.identity }); }
+  for (const o of Array.from(ctx.db.owned.identity.filter(guest.identity))) ctx.db.owned.id.update({ ...o, identity: p.identity });
   for (const f of Array.from(ctx.db.friend.owner.filter(guest.identity))) ctx.db.friend.id.update({ ...f, owner: p.identity });
   for (const f of Array.from(ctx.db.friend.other.filter(guest.identity))) ctx.db.friend.id.update({ ...f, other: p.identity });
   ctx.db.watcher.identity.delete(guest.identity);
@@ -963,27 +1103,45 @@ export const startDaily = spacetimedb.reducer(ctx => {
   saveStats(ctx, { ...s, dailyLast: today, dailyStreak, dailyBest: Math.max(s.dailyBest, dailyStreak), dailyResult: '', dailyYou: 0, dailyThem: 0 });
   if (dailyStreak >= 7) award(ctx, p.identity, 'daily7');
   bumpDaily(ctx, today, 1, 0);
+  addCoins(ctx, p.identity, COINS.dailyPlay);
   p = stopWaiting(ctx, p);
   startGame(ctx, p, undefined, 'daily', BOT_NAMES[today % BOT_NAMES.length] + '_daily', mix64(BigInt(today) * 0x9e3779b1n + 0x5eedn));
 });
 
-export const joinQueue = spacetimedb.reducer(ctx => {
+function assertNotBanned(p: PlayerRow) {
+  if (p.banned) throw new SenderError('This account is suspended. Contact us from Settings if you think this is a mistake.');
+}
+/** During maintenance no new online matches start; matches already running carry on. */
+function assertOpen(ctx: Ctx) {
+  const n = ctx.db.notice.id.find(0);
+  if (n && n.maintenance) throw new SenderError(n.message || 'The game is being updated. Back in a few minutes!');
+}
+
+/** Ranked: rated, and counts on the leaderboards. */
+export const joinQueue = spacetimedb.reducer(ctx => enqueue(ctx, false));
+/** Unranked: a real opponent, normal XP and coins, no rating change, not on the leaderboards. */
+export const joinCasual = spacetimedb.reducer(ctx => enqueue(ctx, true));
+
+function enqueue(ctx: Ctx, casual: boolean) {
   let p = me(ctx);
   assertFree(ctx, p);
+  assertNotBanned(p);
+  assertOpen(ctx);
   if (config.requireAccount && p.isGuest) throw new SenderError('Create an account to play online');
   if (!p.tutorialDone || !p.practiceDone) throw new SenderError('Finish the tutorial and a practice match first');
-  if (ctx.db.queueEntry.identity.find(p.identity)) return;
+  const queued = ctx.db.queueEntry.identity.find(p.identity);
+  if (queued && queued.casual === casual) return;
   checkSeason(ctx);
   p = me(ctx); // the season change may have moved this player's rating
   p = stopWaiting(ctx, p);
-  ctx.db.queueEntry.insert({ identity: p.identity, rating: p.rating, joinedAt: ctx.timestamp });
+  ctx.db.queueEntry.insert({ identity: p.identity, rating: p.rating, joinedAt: ctx.timestamp, casual });
   ctx.db.player.identity.update({ ...p, waiting: 'queue', gameId: 0n });
   if (tryMatch(ctx, p.identity)) return;
   ctx.db.queueTimer.insert({
     scheduledId: 0n, scheduledAt: ScheduleAt.time(addMs(ctx.timestamp, QUEUE_RETRY_MS).microsSinceUnixEpoch),
     identity: p.identity, attempt: 1,
   });
-});
+}
 
 export const leaveQueue = spacetimedb.reducer(ctx => {
   stopWaiting(ctx, me(ctx));
@@ -992,6 +1150,8 @@ export const leaveQueue = spacetimedb.reducer(ctx => {
 export const createRoom = spacetimedb.reducer(ctx => {
   const p = me(ctx);
   assertFree(ctx, p);
+  assertNotBanned(p);
+  assertOpen(ctx);
   openRoom(ctx, stopWaiting(ctx, p));
 });
 
@@ -1015,6 +1175,8 @@ export const closeRoom = spacetimedb.reducer(ctx => {
 export const joinRoom = spacetimedb.reducer({ code: t.string() }, (ctx, { code }) => {
   let p = me(ctx);
   assertFree(ctx, p);
+  assertNotBanned(p);
+  assertOpen(ctx);
   const r = ctx.db.room.code.find(code.trim().toUpperCase().slice(0, 5));
   if (!r) throw new SenderError('Room not found');
   if (r.host.isEqual(p.identity)) throw new SenderError("That's your own room");
@@ -1105,11 +1267,11 @@ export const sendChat = spacetimedb.reducer({ kind: t.string(), body: t.string()
   if (!g) throw new SenderError('You are not in a match');
   const seat = seatOf(g, ctx.sender);
   if (seat === -1) return;
-  if (kind === 'emoji') {
-    if (!EMOJIS.includes(body)) throw new SenderError('Unknown emoji');
-  } else if (kind === 'phrase') {
-    if (!PHRASES.includes(body)) throw new SenderError('Pick one of the phrases');
-  } else throw new SenderError('Unknown message type');
+  assertNotBanned(p);
+  const pack = kind === 'emoji' ? REACTIONS[body] : kind === 'phrase' ? PHRASES[body] : undefined;
+  if (kind !== 'emoji' && kind !== 'phrase') throw new SenderError('Unknown message type');
+  if (!pack) throw new SenderError(kind === 'emoji' ? 'Unknown reaction' : 'Pick one of the phrases');
+  if (!ownedItems(ctx, p.identity).has(`pack:${pack}`)) throw new SenderError('Unlock that chat pack first');
   const since = ctx.timestamp.microsSinceUnixEpoch - BigInt(CHAT_BURST_MS) * 1000n;
   let recent = 0;
   for (const m of ctx.db.chatMsg.gameId.filter(g.id)) if (m.seat === seat && m.at.microsSinceUnixEpoch > since) recent++;
@@ -1118,25 +1280,52 @@ export const sendChat = spacetimedb.reducer({ kind: t.string(), body: t.string()
 });
 
 // ---------- looks, friends, invites, reports, watching ----------
-const allSkins = (who: Identity) => config.allSkins.includes(who.toHexString().replace(/^0x/, '').toLowerCase());
-const lookOf = (ctx: Ctx, who: Identity) => ctx.db.look.identity.find(who) ?? { identity: who, avatar: '', frame: '', skin: 'classic' };
-function hasAch(ctx: Ctx, who: Identity, key: string) {
-  for (const a of ctx.db.achievement.identity.filter(who)) if (a.key === key) return true;
-  return false;
+type LookRow = NonNullable<ReturnType<Ctx['db']['look']['identity']['find']>>;
+const lookRowOf = (ctx: Ctx, who: Identity): LookRow => ctx.db.look.identity.find(who) ?? {
+  identity: who, avatar: 'rocky', frame: '', skin: 'classic', back: 'classic', color: 'green', fx: 'confetti', title: '',
+  reactions: DEFAULT_REACTIONS, phrases: DEFAULT_PHRASES,
+};
+function saveLook(ctx: Ctx, row: LookRow) {
+  if (ctx.db.look.identity.find(row.identity)) ctx.db.look.identity.update(row); else ctx.db.look.insert(row);
 }
+// which look field each kind of item goes in
+const SLOT: Partial<Record<ItemKind, keyof LookRow>> = {
+  avatar: 'avatar', aura: 'frame', skin: 'skin', back: 'back', color: 'color', fx: 'fx', title: 'title',
+};
 
-/** Changes your avatar, frame and card skin. Frames and skins have to be unlocked first. */
-export const setLook = spacetimedb.reducer({ avatar: t.string(), frame: t.string(), skin: t.string() }, (ctx, { avatar, frame, skin }) => {
+/** Wears an item you own: an avatar, aura, card style, card back, message colour, win effect or title. */
+export const equip = spacetimedb.reducer({ kind: t.string(), key: t.string() }, (ctx, { kind, key }) => {
   const p = me(ctx);
-  if (avatar !== '' && !AVATARS.includes(avatar)) throw new SenderError('Pick one of the avatars');
-  if (!(frame in FRAME_UNLOCK)) throw new SenderError('Unknown frame');
-  if (FRAME_UNLOCK[frame] && !hasAch(ctx, p.identity, FRAME_UNLOCK[frame]!)) throw new SenderError('That frame is still locked');
-  if (!(skin in SKIN_LEVEL)) throw new SenderError('Unknown card style');
-  if (!allSkins(p.identity) && levelOf(statsOf(ctx, p.identity).xp).level < SKIN_LEVEL[skin]!) {
-    throw new SenderError(`That card style unlocks at level ${SKIN_LEVEL[skin]}`);
-  }
-  const row = { identity: p.identity, avatar, frame, skin };
-  if (ctx.db.look.identity.find(p.identity)) ctx.db.look.identity.update(row); else ctx.db.look.insert(row);
+  const slot = SLOT[kind as ItemKind];
+  const item = itemOf(kind as ItemKind, key);
+  if (!slot || !item) throw new SenderError('Unknown item');
+  if (!ownedItems(ctx, p.identity).has(item.id)) throw new SenderError('Unlock that first, on the Level road or in the Store');
+  saveLook(ctx, { ...lookRowOf(ctx, p.identity), [slot]: key });
+});
+
+/** Sets which reactions (up to 6) and phrases (up to 4) show in your quick chat during a match. */
+export const setLoadout = spacetimedb.reducer({ reactions: t.array(t.string()), phrases: t.array(t.string()) }, (ctx, { reactions, phrases }) => {
+  const p = me(ctx);
+  if (reactions.length > REACTION_SLOTS || phrases.length > PHRASE_SLOTS) throw new SenderError('Too many chat items');
+  if (new Set(reactions).size !== reactions.length || new Set(phrases).size !== phrases.length) throw new SenderError('Each chat item can only be used once');
+  const mine = ownedItems(ctx, p.identity);
+  for (const r of reactions) if (!REACTIONS[r] || !mine.has(`pack:${REACTIONS[r]}`)) throw new SenderError('Unlock that reaction first');
+  for (const ph of phrases) if (!PHRASES[ph] || !mine.has(`pack:${PHRASES[ph]}`)) throw new SenderError('Unlock that phrase first');
+  saveLook(ctx, { ...lookRowOf(ctx, p.identity), reactions: reactions.join(','), phrases: phrases.join('|') });
+});
+
+/** Buys an item from the Store with coins. Today's deal is 20% off. */
+export const buyItem = spacetimedb.reducer({ item: t.string() }, (ctx, { item: id }) => {
+  const p = me(ctx);
+  const item = ITEM.get(id);
+  if (!item || item.price === undefined) throw new SenderError("That isn't for sale");
+  if (ownedItems(ctx, p.identity).has(id)) throw new SenderError('You already own that');
+  const deal = dealOf(dayOf(ctx.timestamp));
+  const price = deal.item.id === id ? deal.price : item.price;
+  const w = walletOf(ctx, p.identity);
+  if (w.coins < price) throw new SenderError(`You need ${price - w.coins} more coins`);
+  saveWallet(ctx, { ...w, coins: w.coins - price, spent: w.spent + price });
+  ctx.db.owned.insert({ id: 0n, identity: p.identity, item: id, at: ctx.timestamp });
 });
 
 function relation(ctx: Ctx, owner: Identity, other: Identity) {
@@ -1257,6 +1446,100 @@ export const leaveGame = spacetimedb.reducer(ctx => {
   ctx.db.player.identity.update({ ...p, gameId: 0n });
 });
 
+// ---------- account, help and admin ----------
+/** Deletes your account and everything on it. Reports you made about others are kept for moderation. */
+export const deleteAccount = spacetimedb.reducer({ confirm: t.string() }, (ctx, { confirm }) => {
+  if (confirm !== 'DELETE') throw new SenderError('Type DELETE to confirm');
+  let p = me(ctx);
+  const g = liveGame(ctx, p);
+  if (g) {
+    const seat = seatOf(g, p.identity);
+    if (seat !== -1) { finish(ctx, g, 'forfeit', 1 - seat); ctx.db.game.id.update(g); }
+  }
+  p = stopWaiting(ctx, me(ctx));
+  ctx.db.transfer.guest.delete(p.identity);
+  ctx.db.ladder.identity.delete(p.identity);
+  dropProgress(ctx, p.identity);
+  ctx.db.player.identity.delete(p.identity);
+});
+
+/** "Report a bug" from Settings. A few a day, so it can't be used to flood the admin page. */
+export const reportBug = spacetimedb.reducer({ text: t.string(), version: t.string(), device: t.string() }, (ctx, { text, version, device }) => {
+  const p = me(ctx);
+  text = text.trim();
+  if (text.length < 5) throw new SenderError('Tell us a little more about what happened');
+  const since = ctx.timestamp.microsSinceUnixEpoch - DAY_MICROS;
+  let today = 0;
+  for (const b of ctx.db.bug.identity.filter(p.identity)) if (b.at.microsSinceUnixEpoch > since) today++;
+  if (today >= BUG_REPORTS_PER_DAY) throw new SenderError('Thanks! You have sent a few today already. Try again tomorrow.');
+  ctx.db.bug.insert({
+    id: 0n, identity: p.identity, name: p.name, text: text.slice(0, 1000),
+    version: version.slice(0, 40), device: device.slice(0, 200), at: ctx.timestamp,
+  });
+});
+
+function admin(ctx: Ctx) {
+  if (!isAdmin(ctx.sender)) throw new SenderError('Admins only');
+}
+function playerNamed(ctx: Ctx, name: string): PlayerRow {
+  const p = ctx.db.player.nameKey.find(name.trim().toLowerCase());
+  if (!p) throw new SenderError('No player with that name');
+  return p;
+}
+
+/** Admin: renames a player (for offensive names). */
+export const adminRename = spacetimedb.reducer({ name: t.string(), newName: t.string() }, (ctx, { name, newName }) => {
+  admin(ctx);
+  const p = playerNamed(ctx, name);
+  newName = newName.trim();
+  if (!/^[A-Za-z0-9_]{3,16}$/.test(newName)) throw new SenderError('Username: 3–16 letters, numbers or _');
+  const key = newName.toLowerCase();
+  const taken = ctx.db.player.nameKey.find(key);
+  if (taken && !taken.identity.isEqual(p.identity)) throw new SenderError('Username taken');
+  ctx.db.player.identity.update({ ...p, name: newName, nameKey: key });
+  const l = ctx.db.ladder.identity.find(p.identity);
+  if (l) ctx.db.ladder.identity.update({ ...l, name: newName });
+  const w = ctx.db.weekly.identity.find(p.identity);
+  if (w) ctx.db.weekly.identity.update({ ...w, name: newName });
+});
+
+/** Admin: suspends a player (no online play or chat) or lifts it. */
+export const adminBan = spacetimedb.reducer({ name: t.string(), banned: t.bool() }, (ctx, { name, banned }) => {
+  admin(ctx);
+  let p = playerNamed(ctx, name);
+  if (banned) {
+    p = stopWaiting(ctx, p);
+    ctx.db.ladder.identity.delete(p.identity);
+    ctx.db.weekly.identity.delete(p.identity);
+  }
+  ctx.db.player.identity.update({ ...p, banned });
+});
+
+/** Admin: gives a player coins and/or an item (e.g. to make up for a bug). */
+export const adminGrant = spacetimedb.reducer({ name: t.string(), coins: t.u32(), item: t.string() }, (ctx, { name, coins, item }) => {
+  admin(ctx);
+  const p = playerNamed(ctx, name);
+  if (item) {
+    if (!ITEM.has(item)) throw new SenderError('Unknown item');
+    if (!ownedItems(ctx, p.identity).has(item)) ctx.db.owned.insert({ id: 0n, identity: p.identity, item, at: ctx.timestamp });
+  }
+  addCoins(ctx, p.identity, coins);
+});
+
+/** Admin: removes a report or bug report once it has been dealt with. */
+export const adminDismiss = spacetimedb.reducer({ kind: t.string(), id: t.u64() }, (ctx, { kind, id }) => {
+  admin(ctx);
+  if (kind === 'report') ctx.db.report.id.delete(id);
+  else if (kind === 'bug') ctx.db.bug.id.delete(id);
+});
+
+/** Admin: shows a message to everyone. With maintenance on, matches can't start. */
+export const adminNotice = spacetimedb.reducer({ maintenance: t.bool(), message: t.string() }, (ctx, { maintenance, message }) => {
+  admin(ctx);
+  const row = { id: 0, maintenance, message: message.trim().slice(0, 200), at: ctx.timestamp };
+  if (ctx.db.notice.id.find(0)) ctx.db.notice.id.update(row); else ctx.db.notice.insert(row);
+});
+
 // ---------- connections ----------
 export const onConnect = spacetimedb.clientConnected(ctx => {
   if (ctx.db.sweepTimer.count() === 0n) {
@@ -1274,8 +1557,9 @@ export const onConnect = spacetimedb.clientConnected(ctx => {
     ctx.db.player.insert({
       identity: ctx.sender, name, nameKey: name.toLowerCase(), isGuest: true,
       rating: 1000, wins: 0, losses: 0, draws: 0, tutorialDone: false, practiceDone: false,
-      conns: 1, gameId: 0n, waiting: '', roomCode: '', createdAt: ctx.timestamp, lastSeen: ctx.timestamp,
+      conns: 1, gameId: 0n, waiting: '', roomCode: '', createdAt: ctx.timestamp, lastSeen: ctx.timestamp, banned: false,
     });
+    bumpDay(ctx, 0, 1);
     return;
   }
   ctx.db.player.identity.update({ ...p, conns: p.conns + 1, lastSeen: ctx.timestamp });
@@ -1318,6 +1602,7 @@ export const sweep = spacetimedb.reducer({ onSchedule: sweepTimer }, { arg: swee
   checkSeason(ctx);
   const today = dayOf(ctx.timestamp);
   for (const d of Array.from(ctx.db.dailyStat.iter())) if (d.day + DAILY_STAT_KEEP_DAYS <= today) ctx.db.dailyStat.day.delete(d.day);
+  for (const d of Array.from(ctx.db.dayCount.iter())) if (d.day + 90 <= today) ctx.db.dayCount.day.delete(d.day);
   const dayAgo = ctx.timestamp.microsSinceUnixEpoch - DAY_MICROS;
   for (const tr of Array.from(ctx.db.transfer.iter())) {
     if (tr.createdAt.microsSinceUnixEpoch < dayAgo) ctx.db.transfer.code.delete(tr.code);
@@ -1341,28 +1626,79 @@ const meRow = t.row('Me', {
   waiting: t.string(),
   roomCode: t.string(),
   avatar: t.string(),
-  frame: t.string(),
+  frame: t.string(),      // the aura
   skin: t.string(),
+  back: t.string(),
+  color: t.string(),
+  fx: t.string(),
+  title: t.string(),
+  reactions: t.string(),  // comma-separated
+  phrases: t.string(),    // '|'-separated
   watching: t.string(),   // the friend you're watching, '' if none
-  allSkins: t.bool(),     // every card style unlocked
+  allSkins: t.bool(),     // everything unlocked (special accounts)
+  coins: t.u32(),
+  casual: t.bool(),       // waiting in the unranked queue (rather than ranked)
+  banned: t.bool(),
+  isAdmin: t.bool(),
 });
 
 export const myPlayer = spacetimedb.view({ name: 'my_player', public: true }, t.array(meRow), ctx => {
   const p = ctx.db.player.identity.find(ctx.sender);
   if (!p) return [];
+  const l = lookFields(ctx, p.identity);
   return [{
     identity: p.identity, name: p.name, isGuest: p.isGuest, rating: p.rating, wins: p.wins, losses: p.losses, draws: p.draws,
     tutorialDone: p.tutorialDone, practiceDone: p.practiceDone, waiting: p.waiting, roomCode: p.roomCode,
-    ...lookFields(ctx, p.identity),
+    ...l,
     watching: (() => { const w = ctx.db.watcher.identity.find(p.identity); return w ? ctx.db.player.identity.find(w.target)?.name ?? '' : ''; })(),
-    allSkins: allSkins(p.identity),
+    allSkins: isVip(p.identity),
+    coins: (ctx.db.wallet.identity.find(p.identity)?.coins) ?? COINS.welcome,
+    casual: ctx.db.queueEntry.identity.find(p.identity)?.casual ?? false,
+    banned: p.banned,
+    isAdmin: isAdmin(p.identity),
   }];
 });
 
+/** A player's look, with anything from before custom avatars and auras moved to its new equivalent. */
 function lookFields(ctx: any, who: Identity) {
   const l = ctx.db.look.identity.find(who);
-  return { avatar: l ? l.avatar : '', frame: l ? l.frame : '', skin: l ? l.skin : 'classic' };
+  const pick = (kind: ItemKind, key: string | undefined, fallback: string) => (key !== undefined && itemOf(kind, key) ? key : fallback);
+  const aura = l ? (OLD_AURA[l.frame] ?? l.frame) : '';
+  return {
+    avatar: pick('avatar', l?.avatar, 'rocky'),
+    frame: pick('aura', aura, ''),
+    skin: pick('skin', l?.skin, 'classic'),
+    back: pick('back', l?.back, 'classic'),
+    color: pick('color', l?.color, 'green'),
+    fx: pick('fx', l?.fx, 'confetti'),
+    title: pick('title', l?.title, ''),
+    reactions: l ? l.reactions : DEFAULT_REACTIONS,
+    phrases: l ? l.phrases : DEFAULT_PHRASES,
+  };
 }
+const BOT_LOOK = { avatar: 'clank', frame: '', skin: 'classic', back: 'classic', color: 'green', fx: 'confetti', title: '' };
+
+const itemRow = t.row('OwnedItem', { item: t.string() });
+/** Every item you own (free, Level road, achievements and bought). */
+export const myItems = spacetimedb.view({ name: 'my_items', public: true }, t.array(itemRow), ctx => {
+  if (!ctx.db.player.identity.find(ctx.sender)) return [];
+  return Array.from(ownedItems(ctx as any, ctx.sender), item => ({ item }));
+});
+
+const serverInfoRow = t.row('ServerInfoRow', {
+  maintenance: t.bool(), message: t.string(), day: t.u32(), week: t.u32(), dealItem: t.string(), dealPrice: t.u32(),
+});
+/** Things everyone sees: today's Store deal and any notice from the admin. */
+export const serverInfo = spacetimedb.anonymousView({ name: 'server_info', public: true }, t.array(serverInfoRow), ctx => {
+  const s = ctx.db.season.id.find(0);
+  const n = ctx.db.notice.id.find(0);
+  const day = s ? s.day : 0;
+  const deal = dealOf(day);
+  return [{
+    maintenance: n ? n.maintenance : false, message: n ? n.message : '',
+    day, week: s ? s.week : 0, dealItem: deal.item.id, dealPrice: deal.price,
+  }];
+});
 
 const transferRow = t.row('TransferCode', { code: t.string() });
 
@@ -1413,6 +1749,11 @@ const gameViewRow = t.row('GameView', {
   oppFriend: t.string(),      // '' | 'out' | 'in' | 'friends'
   watchers: t.u32(),          // friends watching this match
   xpGain: t.u32(),            // end screen: XP you earned
+  coinGain: t.u32(),          // end screen: coins you earned (bonuses included)
+  oppBack: t.string(),
+  oppColor: t.string(),
+  oppFx: t.string(),
+  oppTitle: t.string(),
 });
 
 const result = (winner: number, seat: number) => (winner === -1 ? 'draw' : winner === seat ? 'win' : 'loss');
@@ -1449,9 +1790,12 @@ export const myGame = spacetimedb.view({ name: 'my_game', public: true }, t.arra
     oppRematch: g.over && (you ? g.rematch1 : g.rematch0),
     oppLeft: g.over && !oppStillHere(ctx as any, g, seat),
     oppRating: g.p1Bot ? 0 : (ctx.db.player.identity.find(you ? g.p1 : g.p0)?.rating ?? 0),
-    ...(g.p1Bot ? { oppAvatar: '🤖', oppFrame: '', oppSkin: 'classic' } : (({ avatar, frame, skin }) => ({ oppAvatar: avatar, oppFrame: frame, oppSkin: skin }))(lookFields(ctx, you ? g.p1 : g.p0))),
+    ...(({ avatar, frame, skin, back, color, fx, title }) => ({
+      oppAvatar: avatar, oppFrame: frame, oppSkin: skin, oppBack: back, oppColor: color, oppFx: fx, oppTitle: title,
+    }))(g.p1Bot && you ? BOT_LOOK : lookFields(ctx, you ? g.p1 : g.p0)),
     oppFriend: g.p1Bot ? '' : (() => { for (const f of ctx.db.friend.owner.filter(ctx.sender)) if (f.other.isEqual(you ? g.p1 : g.p0)) return f.state; return ''; })(),
     xpGain: you ? g.xp0 : g.xp1,
+    coinGain: you ? g.coins0 : g.coins1,
     watchers: Array.from(ctx.db.watcher.target.filter(g.p0)).length + (g.p1Bot ? 0 : Array.from(ctx.db.watcher.target.filter(g.p1)).length),
   }];
 });
@@ -1496,14 +1840,74 @@ export const myLog = spacetimedb.view({ name: 'my_log', public: true }, t.array(
   }));
 });
 
-const leaderRow = t.row('LeaderRow', { identity: t.identity(), name: t.string(), rating: t.i32(), avatar: t.string(), frame: t.string() });
+const leaderRow = t.row('LeaderRow', {
+  identity: t.identity(), name: t.string(), rating: t.i32(), avatar: t.string(), frame: t.string(), title: t.string(),
+});
 
-// Same for everyone, so Spacetime computes it once and shares it.
+// This month's top 10 by rating. Same for everyone, so Spacetime computes it once and shares it.
 export const leaderboard = spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(leaderRow), ctx => {
   return Array.from(ctx.db.ladder.board.filter(0))
     .sort((a, b) => b.rating - a.rating)
     .slice(0, 10)
-    .map(l => { const k = lookFields(ctx, l.identity); return { identity: l.identity, name: l.name, rating: l.rating, avatar: k.avatar, frame: k.frame }; });
+    .map(l => {
+      const k = lookFields(ctx, l.identity);
+      return { identity: l.identity, name: l.name, rating: l.rating, avatar: k.avatar, frame: k.frame, title: k.title };
+    });
+});
+
+const weeklyRow = t.row('WeeklyRow', {
+  identity: t.identity(), name: t.string(), points: t.u32(), avatar: t.string(), frame: t.string(), title: t.string(),
+});
+const byPoints = (a: { points: number; at: Timestamp }, b: { points: number; at: Timestamp }) =>
+  b.points - a.points || (a.at.microsSinceUnixEpoch < b.at.microsSinceUnixEpoch ? -1 : a.at.microsSinceUnixEpoch > b.at.microsSinceUnixEpoch ? 1 : 0);
+
+// This week's top 10 by points. Ties go to whoever got there first.
+export const weeklyBoard = spacetimedb.anonymousView({ name: 'weekly_board', public: true }, t.array(weeklyRow), ctx => {
+  return Array.from(ctx.db.weekly.board.filter(0))
+    .sort(byPoints)
+    .slice(0, 10)
+    .map(w => {
+      const k = lookFields(ctx, w.identity);
+      return { identity: w.identity, name: w.name, points: w.points, avatar: k.avatar, frame: k.frame, title: k.title };
+    });
+});
+
+const myRankRow = t.row('MyRankRow', {
+  weekRank: t.u32(), weekPoints: t.u32(), weekPlayers: t.u32(), monthRank: t.u32(), monthPlayers: t.u32(),
+});
+/** Where you are on both boards (rank 0 = not on it yet). */
+export const myRank = spacetimedb.view({ name: 'my_rank', public: true }, t.array(myRankRow), ctx => {
+  const weeks = Array.from(ctx.db.weekly.board.filter(0)).sort(byPoints);
+  const months = Array.from(ctx.db.ladder.board.filter(0)).sort((a, b) => b.rating - a.rating);
+  const wi = weeks.findIndex(w => w.identity.isEqual(ctx.sender));
+  const mi = months.findIndex(m => m.identity.isEqual(ctx.sender));
+  return [{
+    weekRank: wi + 1, weekPoints: wi >= 0 ? weeks[wi]!.points : 0, weekPlayers: weeks.length,
+    monthRank: mi + 1, monthPlayers: months.length,
+  }];
+});
+
+const friendBoardRow = t.row('FriendBoardRow', {
+  identity: t.identity(), name: t.string(), me: t.bool(), points: t.u32(), rating: t.i32(), ranked: t.bool(),
+  avatar: t.string(), frame: t.string(), title: t.string(),
+});
+/** You and your friends, for the leaderboard's Friends button. */
+export const friendsBoard = spacetimedb.view({ name: 'friends_board', public: true }, t.array(friendBoardRow), ctx => {
+  const ids = [ctx.sender];
+  for (const f of ctx.db.friend.owner.filter(ctx.sender)) if (f.state === 'friends') ids.push(f.other);
+  const out: any[] = [];
+  for (const who of ids) {
+    const p = ctx.db.player.identity.find(who);
+    if (!p) continue;
+    const k = lookFields(ctx, who);
+    out.push({
+      identity: who, name: p.name, me: who.isEqual(ctx.sender),
+      points: ctx.db.weekly.identity.find(who)?.points ?? 0,
+      rating: p.rating, ranked: !!ctx.db.ladder.identity.find(who),
+      avatar: k.avatar, frame: k.frame, title: k.title,
+    });
+  }
+  return out;
 });
 
 const statsViewRow = t.row('StatsView', {
@@ -1617,7 +2021,7 @@ export const watchGame = spacetimedb.view({ name: 'watch_game', public: true }, 
   for (const c of ctx.db.handCard.gameId.filter(g.id)) if (c.seat === 0) c0++; else c1++;
   const shown = (g.phase === 'reveal' || g.phase === 'result') && g.last0 !== NONE;
   const la = lookFields(ctx, a ? g.p0 : g.p1);
-  const lb = g.p1Bot ? { avatar: '🤖', skin: 'classic' } : lookFields(ctx, a ? g.p1 : g.p0);
+  const lb = g.p1Bot ? BOT_LOOK : lookFields(ctx, a ? g.p1 : g.p0);
   const rating = (who: Identity) => ctx.db.player.identity.find(who)?.rating ?? 0;
   return [{
     gameId: g.id, mode: g.mode, phase: g.phase, seq: g.seq, deadline: g.deadline, phaseMs: g.phaseMs, round: g.round, totalRounds: ROUNDS,
@@ -1639,4 +2043,56 @@ export const watchLog = spacetimedb.view({ name: 'watch_log', public: true }, t.
   return Array.from(ctx.db.roundLog.gameId.filter(g.id), l => ({
     n: l.n, you: seat === 0 ? l.c0 : l.c1, opp: seat === 0 ? l.c1 : l.c0, result: result(l.winner, seat),
   }));
+});
+
+// ---------- admin views: empty for everyone but the admins in config.ts ----------
+const adminReportRow = t.row('AdminReport', {
+  id: t.u64(), at: t.timestamp(), reporter: t.string(), reported: t.string(), reason: t.string(), reportsAgainst: t.u32(), banned: t.bool(),
+});
+export const adminReports = spacetimedb.view({ name: 'admin_reports', public: true }, t.array(adminReportRow), ctx => {
+  if (!isAdmin(ctx.sender)) return [];
+  const all = Array.from(ctx.db.report.iter());
+  const count = new Map<string, number>();
+  for (const r of all) count.set(r.reported.toHexString(), (count.get(r.reported.toHexString()) ?? 0) + 1);
+  return all.map(r => {
+    const reported = ctx.db.player.identity.find(r.reported);
+    return {
+      id: r.id, at: r.at, reporter: ctx.db.player.identity.find(r.reporter)?.name ?? '(deleted)',
+      reported: reported?.name ?? r.reportedName, reason: r.reason,
+      reportsAgainst: count.get(r.reported.toHexString()) ?? 0, banned: reported?.banned ?? false,
+    };
+  });
+});
+
+const adminBugRow = t.row('AdminBug', { id: t.u64(), at: t.timestamp(), name: t.string(), text: t.string(), version: t.string(), device: t.string() });
+export const adminBugs = spacetimedb.view({ name: 'admin_bugs', public: true }, t.array(adminBugRow), ctx => {
+  if (!isAdmin(ctx.sender)) return [];
+  return Array.from(ctx.db.bug.iter(), ({ identity: _, ...b }) => b);
+});
+
+const adminDayRow = t.row('AdminDay', { day: t.u32(), matches: t.u32(), newPlayers: t.u32() });
+export const adminDays = spacetimedb.view({ name: 'admin_days', public: true }, t.array(adminDayRow), ctx => {
+  if (!isAdmin(ctx.sender)) return [];
+  return Array.from(ctx.db.dayCount.board.filter(0), ({ board: _, ...d }) => d);
+});
+
+const adminSummaryRow = t.row('AdminSummaryRow', {
+  players: t.u32(), accounts: t.u32(), online: t.u32(), inMatch: t.u32(), activeToday: t.u32(), banned: t.u32(), coinsInWallets: t.u64(),
+});
+export const adminSummary = spacetimedb.view({ name: 'admin_summary', public: true }, t.array(adminSummaryRow), ctx => {
+  if (!isAdmin(ctx.sender)) return [];
+  const s = ctx.db.season.id.find(0);
+  const today = s ? s.day : 0;
+  let players = 0, accounts = 0, online = 0, inMatch = 0, activeToday = 0, banned = 0;
+  for (const p of ctx.db.player.iter()) {
+    players++;
+    if (!p.isGuest) accounts++;
+    if (p.conns > 0) online++;
+    if (p.gameId !== 0n) inMatch++;
+    if (dayOf(p.lastSeen) === today) activeToday++;
+    if (p.banned) banned++;
+  }
+  let coins = 0n;
+  for (const w of ctx.db.wallet.iter()) coins += BigInt(w.coins);
+  return [{ players, accounts, online, inMatch, activeToday, banned, coinsInWallets: coins }];
 });

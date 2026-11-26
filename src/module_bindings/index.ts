@@ -37,14 +37,23 @@ import {
 import AcceptFriendReducer from "./accept_friend_reducer";
 import AddFriendReducer from "./add_friend_reducer";
 import AddOpponentReducer from "./add_opponent_reducer";
+import AdminBanReducer from "./admin_ban_reducer";
+import AdminDismissReducer from "./admin_dismiss_reducer";
+import AdminGrantReducer from "./admin_grant_reducer";
+import AdminNoticeReducer from "./admin_notice_reducer";
+import AdminRenameReducer from "./admin_rename_reducer";
+import BuyItemReducer from "./buy_item_reducer";
 import ClaimNameReducer from "./claim_name_reducer";
 import ClaimTransferReducer from "./claim_transfer_reducer";
 import CloseRoomReducer from "./close_room_reducer";
 import CreateRoomReducer from "./create_room_reducer";
+import DeleteAccountReducer from "./delete_account_reducer";
 import DismissInviteReducer from "./dismiss_invite_reducer";
+import EquipReducer from "./equip_reducer";
 import FinishTutorialReducer from "./finish_tutorial_reducer";
 import ForfeitReducer from "./forfeit_reducer";
 import InviteFriendReducer from "./invite_friend_reducer";
+import JoinCasualReducer from "./join_casual_reducer";
 import JoinQueueReducer from "./join_queue_reducer";
 import JoinRoomReducer from "./join_room_reducer";
 import LeaveGameReducer from "./leave_game_reducer";
@@ -55,10 +64,11 @@ import ReadyReducer from "./ready_reducer";
 import RematchReducer from "./rematch_reducer";
 import RemoveFriendReducer from "./remove_friend_reducer";
 import ReorderHandReducer from "./reorder_hand_reducer";
+import ReportBugReducer from "./report_bug_reducer";
 import ReportPlayerReducer from "./report_player_reducer";
 import SelectCardReducer from "./select_card_reducer";
 import SendChatReducer from "./send_chat_reducer";
-import SetLookReducer from "./set_look_reducer";
+import SetLoadoutReducer from "./set_loadout_reducer";
 import StartDailyReducer from "./start_daily_reducer";
 import StartPracticeReducer from "./start_practice_reducer";
 import StopWatchingReducer from "./stop_watching_reducer";
@@ -67,7 +77,12 @@ import WatchFriendReducer from "./watch_friend_reducer";
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import AdminBugsRow from "./admin_bugs_table";
+import AdminDaysRow from "./admin_days_table";
+import AdminReportsRow from "./admin_reports_table";
+import AdminSummaryRow from "./admin_summary_table";
 import DailyStatsRow from "./daily_stats_table";
+import FriendsBoardRow from "./friends_board_table";
 import LeaderboardRow from "./leaderboard_table";
 import MyAchievementsRow from "./my_achievements_table";
 import MyChatRow from "./my_chat_table";
@@ -76,18 +91,50 @@ import MyGameRow from "./my_game_table";
 import MyHandRow from "./my_hand_table";
 import MyHistoryRow from "./my_history_table";
 import MyInvitesRow from "./my_invites_table";
+import MyItemsRow from "./my_items_table";
 import MyLogRow from "./my_log_table";
 import MyPlayerRow from "./my_player_table";
+import MyRankRow from "./my_rank_table";
 import MyStatsRow from "./my_stats_table";
 import MyTransferRow from "./my_transfer_table";
 import SeasonInfoRow from "./season_info_table";
+import ServerInfoRow from "./server_info_table";
 import WatchGameRow from "./watch_game_table";
 import WatchLogRow from "./watch_log_table";
+import WeeklyBoardRow from "./weekly_board_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  adminBugs: __table({
+    name: 'admin_bugs',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminBugsRow),
+  adminDays: __table({
+    name: 'admin_days',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminDaysRow),
+  adminReports: __table({
+    name: 'admin_reports',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminReportsRow),
+  adminSummary: __table({
+    name: 'admin_summary',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminSummaryRow),
   dailyStats: __table({
     name: 'daily_stats',
     indexes: [
@@ -95,6 +142,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, DailyStatsRow),
+  friendsBoard: __table({
+    name: 'friends_board',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, FriendsBoardRow),
   leaderboard: __table({
     name: 'leaderboard',
     indexes: [
@@ -151,6 +205,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyInvitesRow),
+  myItems: __table({
+    name: 'my_items',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyItemsRow),
   myLog: __table({
     name: 'my_log',
     indexes: [
@@ -165,6 +226,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyPlayerRow),
+  myRank: __table({
+    name: 'my_rank',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRankRow),
   myStats: __table({
     name: 'my_stats',
     indexes: [
@@ -186,6 +254,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, SeasonInfoRow),
+  serverInfo: __table({
+    name: 'server_info',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ServerInfoRow),
   watchGame: __table({
     name: 'watch_game',
     indexes: [
@@ -200,6 +275,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, WatchLogRow),
+  weeklyBoard: __table({
+    name: 'weekly_board',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, WeeklyBoardRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -207,14 +289,23 @@ const reducersSchema = __reducers(
   __reducerSchema("accept_friend", AcceptFriendReducer),
   __reducerSchema("add_friend", AddFriendReducer),
   __reducerSchema("add_opponent", AddOpponentReducer),
+  __reducerSchema("admin_ban", AdminBanReducer),
+  __reducerSchema("admin_dismiss", AdminDismissReducer),
+  __reducerSchema("admin_grant", AdminGrantReducer),
+  __reducerSchema("admin_notice", AdminNoticeReducer),
+  __reducerSchema("admin_rename", AdminRenameReducer),
+  __reducerSchema("buy_item", BuyItemReducer),
   __reducerSchema("claim_name", ClaimNameReducer),
   __reducerSchema("claim_transfer", ClaimTransferReducer),
   __reducerSchema("close_room", CloseRoomReducer),
   __reducerSchema("create_room", CreateRoomReducer),
+  __reducerSchema("delete_account", DeleteAccountReducer),
   __reducerSchema("dismiss_invite", DismissInviteReducer),
+  __reducerSchema("equip", EquipReducer),
   __reducerSchema("finish_tutorial", FinishTutorialReducer),
   __reducerSchema("forfeit", ForfeitReducer),
   __reducerSchema("invite_friend", InviteFriendReducer),
+  __reducerSchema("join_casual", JoinCasualReducer),
   __reducerSchema("join_queue", JoinQueueReducer),
   __reducerSchema("join_room", JoinRoomReducer),
   __reducerSchema("leave_game", LeaveGameReducer),
@@ -225,10 +316,11 @@ const reducersSchema = __reducers(
   __reducerSchema("rematch", RematchReducer),
   __reducerSchema("remove_friend", RemoveFriendReducer),
   __reducerSchema("reorder_hand", ReorderHandReducer),
+  __reducerSchema("report_bug", ReportBugReducer),
   __reducerSchema("report_player", ReportPlayerReducer),
   __reducerSchema("select_card", SelectCardReducer),
   __reducerSchema("send_chat", SendChatReducer),
-  __reducerSchema("set_look", SetLookReducer),
+  __reducerSchema("set_loadout", SetLoadoutReducer),
   __reducerSchema("start_daily", StartDailyReducer),
   __reducerSchema("start_practice", StartPracticeReducer),
   __reducerSchema("stop_watching", StopWatchingReducer),

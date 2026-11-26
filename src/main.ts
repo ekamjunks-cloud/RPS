@@ -3,12 +3,22 @@
 // and each round's cards once both are revealed.
 import './style.css';
 import { DbConnection, tables } from './module_bindings';
-import { KINDS, ICON, face, BACK, mini, TROPHY, SKULL, SHAKE, SPEAKER_ON, SPEAKER_OFF, LOCK, CHAT } from './art';
-import { sfx, unlock, isMuted, setMuted } from './sfx';
-import { burstAt, confetti, vibrate } from './fx';
+import { KINDS, ICON, face, mini, TROPHY, SKULL, SHAKE, LOCK, CHAT, GEAR, EXIT, LIST, LOCKER, BAG, PLAY, FLAG, STATS, CALENDAR } from './art';
+import { sfx, unlock, isMuted, setMuted, isMusicOn, setMusicOn, setTrack } from './sfx';
+import { burstAt, vibrate, winEffect, setReducedMotion, setVibration } from './fx';
 import { drawResultCard } from './card';
-import { AVATARS, FRAMES, SKINS, REPORT_REASONS, avatarHtml, levelOf, nextSkin } from './social';
 import { tierOf, nextTier, tierBadge, ACHIEVEMENTS, achievementOf, today, msToNextDay, msToSeasonEnd, seasonName, shortTime } from './ranks';
+import { addSprite } from './sprite';
+import {
+  ITEM, ITEMS, COINS, REACTION_SLOTS, PHRASE_SLOTS, levelOf, nameOf, descOf, itemsOf, KIND_LABEL, avatarHtml, reactionSvg, reactionName,
+  ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
+} from './catalog';
+
+const VERSION = '2.0';
+const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
+// Contact us / privacy policy address. Put your support email here before launch.
+const SUPPORT_EMAIL = '';
+addSprite();
 
 const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'https://maincloud.spacetimedb.com';
 const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'rps-10-b7hi9';
@@ -35,7 +45,9 @@ const store = {
 };
 
 // fill every data-icon placeholder with its artwork
-const STATIC_ICONS: Record<string, string> = { ...ICON, trophy: TROPHY };
+const STATIC_ICONS: Record<string, string> = {
+  ...ICON, trophy: TROPHY, gear: GEAR, exit: EXIT, list: LIST, locker: LOCKER, bag: BAG, play: PLAY, flag: FLAG, stats: STATS, calendar: CALENDAR,
+};
 document.querySelectorAll<HTMLElement>('[data-icon]').forEach(el => { el.innerHTML = STATIC_ICONS[el.dataset.icon!] || ''; });
 
 let conn: DbConnection;
@@ -76,22 +88,18 @@ function toast(msg: string, kind = '') {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 3200);
 }
 
-// ---------- sound toggle ----------
-function renderSound() {
-  document.querySelectorAll<HTMLElement>('.sndBtn').forEach(b => {
-    b.innerHTML = isMuted() ? SPEAKER_OFF : SPEAKER_ON;
-    b.classList.toggle('off', isMuted());
-    b.setAttribute('aria-pressed', String(!isMuted()));
-  });
-}
-document.querySelectorAll<HTMLElement>('.sndBtn').forEach(b => b.addEventListener('click', () => {
-  setMuted(!isMuted()); renderSound(); sfx.tap();
-}));
-renderSound();
+// ---------- settings saved on this device ----------
+const PREF = {
+  vibe: () => store.get('rps10_vibe') !== '0',
+  motion: () => store.get('rps10_motion') === '1',
+};
+setVibration(PREF.vibe());
+setReducedMotion(PREF.motion());
+document.body.classList.toggle('calm', PREF.motion());
 addEventListener('pointerdown', unlock, { capture: true });
 addEventListener('keydown', unlock, { capture: true });
 // a soft click on every button
-document.addEventListener('click', e => { const b = (e.target as HTMLElement).closest('button'); if (b && !b.disabled && !b.matches('.sndBtn, .card, #readyBtn, .emo')) sfx.tap(); });
+document.addEventListener('click', e => { const b = (e.target as HTMLElement).closest('button'); if (b && !b.disabled && !b.matches('.card, #readyBtn, .emo')) sfx.tap(); });
 
 // ---------- talking to the server ----------
 /** Calls a server reducer. Refusals ("Room not found", ...) are shown to the player. */
@@ -101,13 +109,17 @@ function call(name: string, args: any = {}): Promise<boolean> {
     .then(() => fn(args))
     .then(() => true, (err: any) => { showError(String((err && err.message) || err || 'Something went wrong. Try again.')); return false; });
 }
+const isOpen = (id: string) => !$(id).classList.contains('hide');
 function showError(msg: string) {
   msg = msg.replace(/^.*?Error:\s*/, '');
+  if (/fatal|internal|panic|unreachable/i.test(msg)) msg = 'Something went wrong on our side. Nothing was lost. Try again.';
   if (showing('scrAuth')) $('authErr').textContent = msg;
-  else if (!$('friendModal').classList.contains('hide')) $('friendErr').textContent = msg;
-  else if (!$('friendsModal').classList.contains('hide')) $('friendsErr').textContent = msg;
-  else if (!$('lookModal').classList.contains('hide')) $('lookErr').textContent = msg;
-  else if (showing('scrLobby')) $('lobbyErr').textContent = msg;
+  else if (isOpen('buyModal')) { const e = $('buyErr'); if (e) e.textContent = msg; else toast(msg, 'bad'); }
+  else if (isOpen('settingsSheet') && !$('setDelete').classList.contains('hide')) $('delErr').textContent = msg;
+  else if (isOpen('settingsSheet') && !$('setBugPage').classList.contains('hide')) $('bugErr').textContent = msg;
+  else if (isOpen('friendModal')) $('friendErr').textContent = msg;
+  else if (isOpen('friendsModal')) $('friendsErr').textContent = msg;
+  else if (showing('scrLobby') && !document.querySelector('.sheetOv:not(.hide)')) $('lobbyErr').textContent = msg;
   else toast(msg, 'bad'); // the error spot isn't on screen: show it anyway
 }
 
@@ -129,6 +141,7 @@ async function connect() {
   closeModals();
   $('loadMsg').textContent = 'Connecting…';
   show('scrLoad');
+  loadTips(my);
 
   // Signed in with Google: the Firebase ID token is the login. Otherwise: this browser's saved guest token.
   let token: string | undefined, provider: (() => Promise<string>) | undefined;
@@ -155,7 +168,8 @@ async function connect() {
         .onError(() => { if (my === gen) $('loadMsg').textContent = 'Could not load the game. Refresh to try again.'; })
         .subscribe([tables.myPlayer, tables.myGame, tables.myHand, tables.myLog, tables.myTransfer, tables.leaderboard, tables.myChat,
           tables.myStats, tables.myHistory, tables.myAchievements, tables.seasonInfo, tables.dailyStats,
-          tables.myFriends, tables.myInvites, tables.watchGame, tables.watchLog]);
+          tables.myFriends, tables.myInvites, tables.watchGame, tables.watchLog,
+          tables.myItems, tables.serverInfo, tables.weeklyBoard, tables.myRank, tables.friendsBoard]);
     })
     .onAutomaticReconnect(() => { if (my === gen) net(null); })
     .onDisconnect(() => { if (my === gen && connected) net('Reconnecting…'); })
@@ -174,8 +188,9 @@ async function connect() {
         store.set(TOKEN_KEY, null);
         connect();
       } else {
-        $('loadMsg').textContent = "Can't reach the game server. Retrying…";
-        setTimeout(() => { if (my === gen) connect(); }, 3000);
+        // offline, or the server is down: say so, and keep trying
+        $('loadMsg').innerHTML = `<b>Can't reach the game</b><br>${navigator.onLine === false ? 'Check your internet connection.' : 'The server may be down for a moment.'} Your progress is saved on the server, so nothing is lost.<br><small>Trying again in 5s…</small>`;
+        setTimeout(() => { if (my === gen) connect(); }, 5000);
       }
     })
     .build();
@@ -185,10 +200,34 @@ async function connect() {
   const changed = () => { if (my === gen && !queued) { queued = true; queueMicrotask(() => { queued = false; if (my === gen) sync(); }); } };
   for (const t of [conn.db.myPlayer, conn.db.myGame, conn.db.myHand, conn.db.myLog, conn.db.myTransfer, conn.db.leaderboard, conn.db.myChat,
     conn.db.myStats, conn.db.myHistory, conn.db.myAchievements, conn.db.seasonInfo, conn.db.dailyStats,
-    conn.db.myFriends, conn.db.myInvites, conn.db.watchGame, conn.db.watchLog] as any[]) {
+    conn.db.myFriends, conn.db.myInvites, conn.db.watchGame, conn.db.watchLog,
+    conn.db.myItems, conn.db.serverInfo, conn.db.weeklyBoard, conn.db.myRank, conn.db.friendsBoard] as any[]) {
     t.onInsert(changed); t.onDelete(changed);
     if (typeof t.onUpdate === 'function') t.onUpdate(changed);
   }
+}
+
+// while loading: a rotating tip, and a Retry button if it takes a while
+const TIPS = [
+  'Tip: you hold 4 of one card and 3 of the others. Count what your opponent has played.',
+  'Tip: the last round is often decided by counting. What have they not played yet?',
+  'Tip: Unranked matches give normal XP and coins without risking your rating.',
+  'Tip: every level on the Level road pays coins, even the ones without an unlock.',
+  'Tip: the daily challenge deals everyone the same hands. One try a day.',
+];
+function loadTips(my: number) {
+  let i = Math.floor(Math.random() * TIPS.length);
+  $('loadTip').textContent = TIPS[i]!;
+  $('loadRetry').classList.add('hide');
+  const t = setInterval(() => {
+    if (my !== gen || ready) { clearInterval(t); return; }
+    i = (i + 1) % TIPS.length; $('loadTip').textContent = TIPS[i]!;
+  }, 4000);
+  setTimeout(() => {
+    if (my !== gen || ready) return;
+    $('loadMsg').textContent = 'Still connecting…';
+    $('loadRetry').classList.remove('hide');
+  }, 8000);
 }
 
 /** First data has arrived on a new connection. */
@@ -257,8 +296,10 @@ function buildState(gv: any) {
     totalRounds: gv.totalRounds, pickMs: gv.pickMs, phaseMs: gv.phaseMs, rated: gv.rated, ratingChange: gv.ratingChange,
     you: { name: gv.youName, score: gv.youScore, hand, sel: gv.youSel === 0n ? null : String(gv.youSel), ready: gv.youReady,
       locked: gv.youLocked || (gv.phase === 'pick' && lockPending === lockKey) },
-    watchers: gv.watchers, xpGain: gv.xpGain,
-    opp: { name: gv.oppName, isBot: gv.oppIsBot, rating: gv.oppRating, avatar: gv.oppAvatar, frame: gv.oppFrame, skin: gv.oppSkin, friend: gv.oppFriend, score: gv.oppScore, handCount: gv.oppHandCount, ready: gv.oppReady, placed: gv.oppPlaced, connected: gv.oppConnected },
+    watchers: gv.watchers, xpGain: gv.xpGain, coinGain: gv.coinGain,
+    opp: { name: gv.oppName, isBot: gv.oppIsBot, rating: gv.oppRating, avatar: gv.oppAvatar, frame: gv.oppFrame, skin: gv.oppSkin,
+      back: gv.oppBack, color: gv.oppColor, fx: gv.oppFx, title: gv.oppTitle,
+      friend: gv.oppFriend, score: gv.oppScore, handCount: gv.oppHandCount, ready: gv.oppReady, placed: gv.oppPlaced, connected: gv.oppConnected },
     reveal: gv.revealShown ? { n: gv.round, you: kindName(gv.revealYou), opp: kindName(gv.revealOpp), result: gv.revealResult || null } : null,
     log,
     ended: gv.over ? { result: gv.endResult, reason: gv.endReason } : null,
@@ -277,6 +318,7 @@ function sync() {
   renderMe();
   renderBoard();
   renderInvites();
+  renderSheets();
 
   const gv = first(conn.db.myGame.iter());
   if (gv && String(gv.gameId) !== dismissed) {
@@ -285,6 +327,7 @@ function sync() {
     return;
   }
   if (G) leaveGameScreen();
+  setTrack('lobby');
   if (me.watching) { renderWatch(); return; }
   if (showing('scrWatch')) toLobby();
 
@@ -315,7 +358,10 @@ function leaveGameScreen() {
 
 // ---------- account ----------
 const suggestName = (n: string) => n.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
-function closeModals() { for (const id of ['acctModal', 'friendModal', 'confirmLeave', 'statsModal', 'lookModal', 'friendsModal', 'reportModal']) $(id).classList.add('hide'); }
+function closeModals() {
+  for (const id of ['friendModal', 'confirmLeave', 'friendsModal', 'reportModal', 'buyModal']) $(id).classList.add('hide');
+  document.querySelectorAll('.sheetOv').forEach(el => el.classList.add('hide'));
+}
 
 /** Guests sign in with Google to get an account. Their progress moves across with a one-time code. */
 async function googleSignIn() {
@@ -379,38 +425,27 @@ async function startAccount() {
   openAuth(google ? 'Pick a username other players will see.' : 'Pick a name to play ranked. Your stats carry over.');
 }
 $('btnGoogle').onclick = () => { pendingQueue = false; startAccount(); };
-$('btnProfile').onclick = () => { renderAccount(); $('acctModal').classList.remove('hide'); };
-$('acctClose').onclick = () => $('acctModal').classList.add('hide');
-$('acctSignIn').onclick = () => { $('acctModal').classList.add('hide'); pendingQueue = false; startAccount(); };
-$('acctSignOut').onclick = () => { $('acctModal').classList.add('hide'); googleSignOut(); };
 
-/** A stable colour for a player's initial, so each name keeps its look. */
-function hue(name: string) { let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; }
-function avatar(el: any, name?: string, photo = true) {
-  const n = name ?? (me ? me.name : '?');
-  el.innerHTML = '';
-  el.style.setProperty('--h', String(hue(n)));
-  el.className = el.className.replace(/\s*\b(fr-\S+|hasEmo)\b/g, '');
-  const own = name === undefined && me;
-  if (own && me.frame) el.classList.add('fr-' + me.frame);
-  if (own && me.avatar) { el.classList.add('hasEmo'); el.innerHTML = `<span class="emo">${me.avatar}</span>`; return; }
-  if (photo && !name && google && google.photo) {
-    const img = document.createElement('img');
-    img.src = google.photo; img.alt = ''; img.referrerPolicy = 'no-referrer';
-    img.onerror = () => { el.textContent = initialOf(n); };
-    el.appendChild(img);
-  } else el.textContent = initialOf(n);
-}
-const initialOf = (n: string) => (n ? n[0]!.toUpperCase() : '?');
+/** Your own avatar with your aura. */
+function avatar(el: any, size = 48) { if (me) el.innerHTML = avatarHtml(me.avatar, me.frame, size, me.name); }
+/** The Account rows in Settings. */
 function renderAccount() {
   if (!me) return;
-  avatar($('acctAv'));
-  $('acctName').textContent = me.name;
-  $('acctSub').textContent = google ? google.email : me.isGuest ? 'Guest — progress is saved on this device only' : 'Account saved on this device';
-  $('acctSignIn').classList.toggle('hide', !me.isGuest);
-  $('acctSignIn').textContent = google ? 'Choose a username' : googleOn ? 'Continue with Google' : 'Create account';
-  $('acctSignOut').classList.toggle('hide', !google);
+  const rows: string[] = [];
+  rows.push(`<div class="ri acct">${avatarHtml(me.avatar, me.frame, 40)}<span><b>${esc(me.name)}</b><small>${google ? 'Signed in with Google' : me.isGuest ? 'Guest: progress is saved on this device only' : 'Account'}</small></span></div>`);
+  if (me.isGuest) rows.push(`<button class="ri" type="button" data-acct="signin"><span>${google ? 'Choose a username' : googleOn ? 'Continue with Google' : 'Create account'}<small>Keep your progress on every device</small></span><span class="chev">›</span></button>`);
+  if (google) rows.push('<button class="ri" type="button" data-acct="signout"><span>Sign out</span><span class="chev">›</span></button>');
+  rows.push('<button class="ri red" type="button" data-acct="delete"><span>Delete account</span><span class="chev">›</span></button>');
+  $('setAccount').innerHTML = rows.join('');
 }
+$('setAccount').addEventListener('click', (e: Event) => {
+  const b = (e.target as HTMLElement).closest('[data-acct]') as HTMLElement | null;
+  if (!b) return;
+  const act = b.dataset.acct;
+  if (act === 'signin') { closeSheet('settingsSheet'); pendingQueue = false; startAccount(); }
+  else if (act === 'signout') { closeSheet('settingsSheet'); googleSignOut(); }
+  else if (act === 'delete') settingsPage('setDelete');
+});
 
 // ---------- lobby ----------
 function toLobby() {
@@ -418,75 +453,165 @@ function toLobby() {
   $('lobbyErr').textContent = '';
   renderMe(); renderBoard();
   show('scrLobby');
+  setTrack('lobby');
 }
 let googleOn = false; // Firebase values are present
 authReady.then(a => { googleOn = !!(a && a.configured); renderMe(); });
 function homeMsg(m: string) { $('lobbyErr').textContent = m; }
 
+const myStats = (): any => first(conn.db.myStats.iter());
+const myLevel = () => levelOf(myStats()?.xp || 0);
+const owned = () => new Set(Array.from(conn.db.myItems.iter(), r => r.item));
+const info = (): any => first(conn.db.serverInfo.iter());
+const coins = () => (me ? me.coins : 0);
+const fmt = (n: number) => n.toLocaleString('en');
+
 function renderMe() {
   if (!me) return;
-  const played = me.wins + me.losses + me.draws;
-  avatar($('meAv')); avatar($('chipAv'));
+  document.querySelectorAll('.coinN').forEach(el => { el.textContent = fmt(coins()); });
+  $('meAv').innerHTML = avatarHtml(me.avatar, me.frame, 116, me.name);
   $('meName').textContent = me.name;
-  $('meTag').textContent = me.isGuest ? 'Guest' : google ? 'Signed in with Google' : 'Account';
-  $('meRating').textContent = ONLINE_NEEDS_ACCOUNT && me.isGuest ? '—' : me.rating;
-  $('btnProfile').classList.toggle('hide', !ACCOUNTS);
-  $('stPlayed').textContent = played;
-  $('stWins').textContent = me.wins;
-  $('stRate').textContent = played ? Math.round((me.wins / played) * 100) + '%' : '—';
-  // sign-in card: shown to guests
+  const t = tierOf(me.rating);
+  $('tierBadge').innerHTML = tierBadge(t, 'xs');
+  $('meRank').textContent = ONLINE_NEEDS_ACCOUNT && me.isGuest ? 'Unranked' : `${t.name} · ${fmt(me.rating)}`;
+  $('meRank').style.color = t.c1;
+  $('meTitle').innerHTML = titleHtml(me.title);
+  // sign-in bar: shown to guests
   $('guestCard').classList.toggle('hide', !ACCOUNTS || !me.isGuest);
   $('guestText').textContent = google ? 'Pick a username to finish your account.'
-    : googleOn ? (ONLINE_NEEDS_ACCOUNT ? 'Sign in to keep your progress on every device and play ranked.' : 'Sign in to keep your progress on every device and pick your own name.')
-    : 'Create an account to pick your own name. Your stats carry over.';
+    : googleOn ? 'Sign in to keep your progress on every device.' : 'Create an account to pick your own name.';
   $('btnGoogle').textContent = google ? 'Choose a username' : googleOn ? 'Continue with Google' : 'Create account';
-  const locked = !me.practiceDone;
-  $('btnQuick').classList.toggle('locked', locked);
-  $('quickIc').innerHTML = locked ? LOCK : ICON.scissors;
-  $('quickSub').textContent = locked ? 'Finish one practice match to unlock' : ONLINE_NEEDS_ACCOUNT && me.isGuest ? 'Ranked · needs an account' : 'Ranked · find an opponent';
-  renderTier();
   renderLevel();
   renderDaily();
-  $('achCount').textContent = `${conn.db.myAchievements.count()}/${ACHIEVEMENTS.length} 🏅`;
+  renderModes();
+  renderNotice();
+  // the Store tab gets a dot until today's deal has been looked at
+  const day = info()?.day;
+  $('storeDot').classList.toggle('hide', !day || store.get('rps10_deal_seen') === String(day));
   if (notice) { homeMsg(notice); notice = ''; }
-  if (!$('acctModal').classList.contains('hide')) renderAccount();
-  if (!$('statsModal').classList.contains('hide')) renderStats();
-  if (!$('lookModal').classList.contains('hide')) renderLook();
-}
-function renderBoard() {
-  const top = Array.from(conn.db.leaderboard.iter()).sort((a, b) => b.rating - a.rating);
-  $('board').innerHTML = top.length ? top.map((u, i) =>
-    `<div class="lb${me && u.identity.isEqual(me.identity) ? ' mine' : ''}${i < 3 ? ' top t' + (i + 1) : ''}"><span class="rk">${i + 1}</span>${tierBadge(tierOf(u.rating), 'sm')}<span class="lbn">${esc(u.name)}</span><b>${u.rating}</b></div>`).join('')
-    : '<div class="empty">No ranked games this season yet. Be the first on the board!</div>';
-  const season = first(conn.db.seasonInfo.iter());
-  $('seasonLbl').textContent = season ? `${seasonName(season.key)} season · ends in ${shortTime(msToSeasonEnd())}` : 'Top 10';
-  const champ = season && season.champ;
-  $('champ').classList.toggle('hide', !champ);
-  if (champ) $('champ').innerHTML = `👑 Last season's champion: <b>${esc(season!.champ)}</b> <span>${season!.champRating}</span>`;
-}
-
-// ---------- rank tier, daily challenge, stats and achievements ----------
-const myStats = (): any => first(conn.db.myStats.iter());
-function renderTier() {
-  const t = tierOf(me.rating), n = nextTier(me.rating);
-  $('tierBadge').innerHTML = tierBadge(t);
-  $('tierName').innerHTML = `${t.name}<small>rank</small>`;
-  $('tierRow').style.setProperty('--tc', t.c1);
-  const lo = Number.isFinite(t.min) ? t.min : 1000;
-  const frac = n ? Math.max(0.04, Math.min(1, (me.rating - Math.min(lo, me.rating)) / (n.min - Math.min(lo, me.rating)))) : 1;
-  $('tierFill').style.width = `${Math.round(frac * 100)}%`;
-  const last = myStats()?.lastSeason;
-  $('tierNext').textContent = (n ? `${n.min - me.rating} rating to ${n.name}` : 'Top rank. Stay there!')
-    + (last ? ` · last season ${tierOf(last).name} (${last})` : '');
 }
 function renderLevel() {
-  const { level, into, need } = levelOf(myStats()?.xp || 0);
+  const { level, into, need } = myLevel();
   $('lvlNum').textContent = level; $('lvlN').textContent = level;
   $('lvlXp').textContent = `${into} / ${need} XP`;
   $('lvlFill').style.width = `${Math.max(2, Math.round((into / need) * 100))}%`;
-  const ns = nextSkin(level);
-  $('lvlNext').textContent = me.allSkins ? 'Every card style unlocked ✨' : ns ? `Next card style: ${ns.name} at level ${ns.level}` : 'Every card style unlocked ✨';
+  const n = nextUnlock(level);
+  $('lvlNext').textContent = n ? `Next: ${n.items.map(i => nameOf(i.id) + (i.kind === 'skin' ? ' cards' : '')).join(' + ')} at level ${n.level}` : 'You have finished the Level road!';
 }
+/** Server notices (maintenance) shown at the top of the lobby. */
+function renderNotice() {
+  const s = info();
+  const on = !!s && (s.maintenance || !!s.message);
+  $('noticeBar').classList.toggle('hide', !on);
+  if (on) $('noticeBar').innerHTML = `<b>${s.maintenance ? 'Maintenance' : 'News'}</b> ${esc(s.message || 'The game is being updated. Online matches are paused for a few minutes.')}`;
+}
+
+// match type: Ranked, Unranked, Friend or Practice, then one big Play
+type Mode = 'ranked' | 'casual' | 'friend' | 'practice';
+let mode: Mode = (['ranked', 'casual', 'friend', 'practice'].includes(store.get('rps10_mode') || '') ? store.get('rps10_mode') : 'ranked') as Mode;
+const MODE_HINT: Record<Mode, string> = {
+  ranked: 'Rated · counts on the leaderboards',
+  casual: 'A real opponent · no rating change',
+  friend: 'Private room · send your friend a code',
+  practice: 'Against a bot · half XP and coins',
+};
+function renderModes() {
+  const locked = !me.practiceDone;
+  const shown: Mode = locked && (mode === 'ranked' || mode === 'casual') ? 'practice' : mode;
+  document.querySelectorAll<HTMLButtonElement>('#modes [data-mode]').forEach(b => {
+    const m = b.dataset.mode as Mode;
+    b.classList.toggle('on', m === shown);
+    b.setAttribute('aria-selected', String(m === shown));
+    b.disabled = locked && (m === 'ranked' || m === 'casual');
+  });
+  mode = shown;
+  $('modeHint').textContent = locked ? 'Finish one practice match to unlock online play' : MODE_HINT[mode];
+  $('quickIc').innerHTML = PLAY;
+  $('quickTx').textContent = mode === 'friend' ? 'PLAY A FRIEND' : mode === 'practice' ? 'PRACTICE' : 'PLAY';
+  const maint = !!info()?.maintenance && (mode === 'ranked' || mode === 'casual' || mode === 'friend');
+  $('btnQuick').classList.toggle('locked', maint);
+}
+$('modes').addEventListener('click', (e: Event) => {
+  const b = (e.target as HTMLElement).closest('[data-mode]') as HTMLButtonElement | null;
+  if (!b || b.disabled) return;
+  mode = b.dataset.mode as Mode;
+  store.set('rps10_mode', mode);
+  renderModes();
+});
+$('btnQuick').onclick = () => {
+  $('lobbyErr').textContent = '';
+  dismissed = null;
+  if (mode === 'practice') return void call('startPractice');
+  if (mode === 'friend') {
+    $('friendErr').textContent = ''; $('friendModal').classList.remove('hide');
+    setTimeout(() => $('joinCode').focus(), 50);
+    return;
+  }
+  if (!me.practiceDone) { homeMsg('Finish one practice match first'); return; }
+  if (ONLINE_NEEDS_ACCOUNT && me.isGuest) { pendingQueue = true; return void startAccount(); }
+  call(mode === 'casual' ? 'joinCasual' : 'joinQueue');
+};
+
+/** The lobby's leaderboard card: your place this week and the top three. */
+function renderBoard() {
+  if (!me) return;
+  const r: any = first(conn.db.myRank.iter());
+  const top = Array.from(conn.db.weeklyBoard.iter()).sort((a, b) => b.points - a.points).slice(0, 3);
+  $('boardSub').innerHTML = r && r.weekRank ? `This week you're <b>#${r.weekRank}</b> · ${r.weekPoints} pts`
+    : r && r.monthRank ? `This month you're <b>#${r.monthRank}</b>` : 'Win ranked matches to get on the board';
+  $('boardStack').innerHTML = top.map(u => avatarHtml(u.avatar, '', 26)).join('');
+  if (isOpen('boardSheet')) renderBoardSheet();
+}
+
+// ---------- sheets: Locker, Store, Level road, Stats, Leaderboard, Settings ----------
+const sheetTab: Record<string, string> = { lockerSheet: 'cards', storeSheet: 'skin', statsSheet: 'overview', boardSheet: 'week' };
+function openSheet(id: string, tab?: string) {
+  closeModals();
+  if (tab) sheetTab[id] = tab;
+  $(id).classList.remove('hide');
+  renderSheet(id);
+  const body = $(id + 'Body'); if (body) body.scrollTop = 0;
+  if (id === 'roadSheet') setTimeout(() => { const n = $('roadSheet').querySelector('.rs.next'); if (n) n.scrollIntoView({ block: 'center' }); }, 30);
+  if (id === 'storeSheet' && info()) store.set('rps10_deal_seen', String(info().day));
+  renderMe();
+}
+function closeSheet(id: string) { $(id).classList.add('hide'); }
+function renderSheet(id: string) {
+  document.querySelectorAll<HTMLElement>(`#${id} .shTabs [data-tab]`).forEach(b => {
+    b.classList.toggle('on', b.dataset.tab === sheetTab[id]);
+    b.setAttribute('aria-selected', String(b.dataset.tab === sheetTab[id]));
+  });
+  if (id === 'lockerSheet') renderLocker();
+  else if (id === 'storeSheet') renderStore();
+  else if (id === 'roadSheet') renderRoad();
+  else if (id === 'statsSheet') renderStats();
+  else if (id === 'boardSheet') renderBoardSheet();
+  else if (id === 'settingsSheet') renderSettings();
+}
+/** Keeps any open sheet up to date when the server sends something new. */
+function renderSheets() {
+  document.querySelectorAll<HTMLElement>('.sheetOv:not(.hide)').forEach(el => renderSheet(el.id));
+  if (isOpen('buyModal') && buyId) renderBuy();
+}
+document.querySelectorAll<HTMLElement>('.sheetOv').forEach(ov => {
+  ov.addEventListener('click', (e: Event) => {
+    const t = e.target as HTMLElement;
+    if (t === ov || t.closest('[data-close]')) { ov.classList.add('hide'); return; }
+    const tab = t.closest('.shTabs [data-tab]') as HTMLElement | null;
+    if (tab) { sheetTab[ov.id] = tab.dataset.tab!; renderSheet(ov.id); const body = $(ov.id + 'Body'); if (body) body.scrollTop = 0; }
+  });
+});
+$('navLocker').onclick = () => openSheet('lockerSheet');
+$('navStore').onclick = () => openSheet('storeSheet');
+$('btnCoins').onclick = () => openSheet('storeSheet');
+$('navRoad').onclick = () => openSheet('roadSheet');
+$('lvlRow').onclick = () => openSheet('roadSheet');
+$('navStats').onclick = () => openSheet('statsSheet');
+$('btnBoard').onclick = () => openSheet('boardSheet');
+$('btnLook').onclick = () => openSheet('lockerSheet', 'profile');
+$('navPlay').onclick = () => closeModals();
+$('btnSettings').onclick = () => openSheet('settingsSheet');
+
 // ---------- unlock popups: achievements, level-ups and card styles, shown one at a time at the top ----------
 type Pop = { icon: string; label: string; title: string; sub: string; kind?: string };
 const popQueue: Pop[] = [];
@@ -517,14 +642,17 @@ function hidePop() {
 if (import.meta.env.DEV) (window as any).__popup = popup; // for trying the popup from the browser console while developing
 $('achPop').addEventListener('click', () => { if ($('achPop').classList.contains('on')) hidePop(); });
 
-/** Level-ups and new card styles since this connection loaded. */
+/** Level-ups and Level-road unlocks since this connection loaded. */
 let lvlSeen = 0;
 function checkLevel() {
-  const level = levelOf(myStats()?.xp || 0).level;
+  const level = myLevel().level;
   if (lvlSeen && level > lvlSeen) {
-    const skin = SKINS.find(k => k.level > lvlSeen && k.level <= level);
-    popup({ icon: `<span class="apLvl">${level}</span>`, label: 'Level up', title: `Level ${level}`, sub: 'Keep playing to earn more card styles', kind: 'lvl' });
-    if (skin && !me.allSkins) popup({ icon: `<div class="tc" data-skin="${skin.key}">${face('rock')}</div>`, label: 'New card style', title: skin.name, sub: 'Equip it from your avatar in the lobby', kind: 'skin' });
+    const got = ROAD.filter(st => st.level > lvlSeen && st.level <= level);
+    const paid = got.reduce((n, st) => n + st.coins, 0);
+    popup({ icon: `<span class="apLvl">${level}</span>`, label: 'Level up', title: `Level ${level}`, sub: `+${paid} coins`, kind: 'lvl' });
+    if (!me.allSkins) for (const st of got) for (const it of st.items) {
+      popup({ icon: itemArt(it.id, 44), label: `New ${KIND_LABEL[it.kind].toLowerCase()}`, title: nameOf(it.id), sub: 'Yours now. Equip it in the Locker', kind: 'skin' });
+    }
   }
   lvlSeen = level;
 }
@@ -543,9 +671,7 @@ function renderDaily() {
   $('dailyStreak').classList.toggle('zero', streak === 0);
   const res = done ? (s.dailyResult === 'win' ? `Won ${s.dailyYou}–${s.dailyThem}` : s.dailyResult === 'loss' ? `Lost ${s.dailyYou}–${s.dailyThem}` : `Drew ${s.dailyYou}–${s.dailyThem}`) : '';
   $('dailySub').textContent = played ? `${res || 'Played'} today · next in ${shortTime(msToNextDay())}`
-    : streak > 0 ? `Keep your ${streak}-day streak going!` : 'Same hands for everyone today. One try.';
-  const d = Array.from(conn.db.dailyStats.iter()).find(x => x.day === today());
-  $('dailyMeta').textContent = d && d.plays ? `${d.plays} played today · ${d.wins} won` : '';
+    : `+${COINS.dailyPlay} coins, +${COINS.dailyWin} more for a win`;
 }
 setInterval(() => { if (me && showing('scrLobby')) { renderDaily(); renderBoard(); } }, 30000);
 $('btnDaily').onclick = () => {
@@ -569,37 +695,50 @@ function checkAchievements() {
 }
 
 const pct = (w: number, n: number) => (n ? Math.round((w / n) * 100) + '%' : '—');
+/** My stats: Overview, Cards, Awards and History, each fitting one screen. */
 function renderStats() {
   const s = myStats() || {};
   const played = me.wins + me.losses + me.draws;
-  const plays = [s.plays0 || 0, s.plays1 || 0, s.plays2 || 0], wins = [s.wins0 || 0, s.wins1 || 0, s.wins2 || 0];
-  const opens = [s.opens0 || 0, s.opens1 || 0, s.opens2 || 0];
-  const fav = Math.max(...opens) > 0 ? KINDS[opens.indexOf(Math.max(...opens))] : null;
+  const { level } = myLevel();
+  $('statsSheetTop').innerHTML = `<div class="stHead">${avatarHtml(me.avatar, me.frame, 48)}<span><b>${esc(me.name)}</b><small>Level ${level} · ${tierOf(me.rating).name} ${fmt(me.rating)}</small></span></div>`;
+  const tab = sheetTab.statsSheet;
   const cell = (v: any, l: string) => `<div><b>${v}</b><small>${l}</small></div>`;
-  $('stGrid').innerHTML = [
-    cell(played, 'Matches'), cell(pct(me.wins, played), 'Win rate'), cell(s.streak || 0, 'Win streak'),
-    cell(s.bestStreak || 0, 'Best streak'), cell(s.perfects || 0, 'Perfect 10s'), cell(s.dailyBest || 0, 'Best daily streak'),
-  ].join('');
-  $('cardRates').innerHTML = KINDS.map((k, i) => {
-    const r = plays[i] ? wins[i]! / plays[i]! : 0;
-    return `<div class="cr k-${k}"><span class="crIc">${ICON[k]}</span><div class="crBar"><i style="width:${Math.round(r * 100)}%"></i></div>`
-      + `<b>${pct(wins[i]!, plays[i]!)}</b><small>${plays[i]} played</small></div>`;
-  }).join('') + (fav ? `<div class="crFav">Favourite opening card: ${mini(fav)} <b>${fav}</b></div>` : '');
-  const got = new Map(Array.from(conn.db.myAchievements.iter(), a => [a.key, a.at] as const));
-  $('achSub').textContent = `${got.size} of ${ACHIEVEMENTS.length}`;
-  $('achGrid').innerHTML = ACHIEVEMENTS.map(a => {
-    const on = got.has(a.key);
-    return `<div class="ach${on ? ' on' : ''}" title="${esc(a.how)}"><span class="achIc">${on ? a.icon : '🔒'}</span><b>${esc(a.name)}</b><small>${esc(a.how)}</small></div>`;
-  }).join('');
-  const hist = Array.from(conn.db.myHistory.iter()).sort((a, b) => (a.id < b.id ? 1 : -1));
-  const MODE: Record<string, string> = { ranked: 'Ranked', room: 'Friend', bot: 'Online · bot', practice: 'Practice', daily: 'Daily' };
-  $('histList').innerHTML = hist.length ? hist.map(h => {
-    const dots = [...h.outcomes].map((o, i) => `<i class="o${o}" title="Round ${i + 1}: ${h.cards[i] === '-' ? 'too slow' : KINDS['rps'.indexOf(h.cards[i]!)]}"></i>`).join('');
-    const rc = h.ratingChange ? `<span class="${h.ratingChange > 0 ? 'up' : 'down'}">${h.ratingChange > 0 ? '+' : ''}${h.ratingChange}</span>` : '';
-    return `<div class="hr ${h.result}"><span class="hrRes">${h.result === 'win' ? 'W' : h.result === 'loss' ? 'L' : 'D'}</span>`
-      + `<div class="hrMid"><div class="hrTop"><b>${esc(h.opp)}</b><span class="hrMode">${MODE[h.mode] || h.mode}</span></div><div class="hrDots">${dots}</div></div>`
-      + `<div class="hrScore"><b>${h.you}–${h.them}</b>${rc}<small>${ago(h.at.toDate().getTime())}</small></div></div>`;
-  }).join('') : '<div class="empty">Your matches will show up here</div>';
+  let html = '';
+  if (tab === 'overview') {
+    const hist = Array.from(conn.db.myHistory.iter()).sort((a, b) => (a.id < b.id ? 1 : -1)).slice(0, 10);
+    html = `<div class="stGrid">${[cell(played, 'Matches'), cell(pct(me.wins, played), 'Win rate'), cell(s.streak || 0, 'Win streak'),
+      cell(s.bestStreak || 0, 'Best streak'), cell(s.perfects || 0, 'Perfect 10s'), cell(s.dailyStreak || 0, 'Daily streak')].join('')}</div>`
+      + `<h4>Last 10 matches <span class="sub">Newest first</span></h4><div class="last10">${hist.length ? hist.map(h => `<i class="o${h.result[0]}">${h.result === 'win' ? 'W' : h.result === 'loss' ? 'L' : 'D'}</i>`).join('') : '<span class="muted">No matches yet. Play one to see your stats.</span>'}</div>`;
+    const last = s.lastSeason;
+    html += `<h4>Rank</h4><div class="rankRow">${tierBadge(tierOf(me.rating))}<span><b>${tierOf(me.rating).name} · ${fmt(me.rating)}</b><small>${(() => { const n = nextTier(me.rating); return n ? `${n.min - me.rating} rating to ${n.name}` : 'Top rank. Stay there!'; })()}${last ? ` · last season ${tierOf(last).name} (${last})` : ''}</small></span></div>`;
+  } else if (tab === 'cards') {
+    const plays = [s.plays0 || 0, s.plays1 || 0, s.plays2 || 0], wins = [s.wins0 || 0, s.wins1 || 0, s.wins2 || 0];
+    const opens = [s.opens0 || 0, s.opens1 || 0, s.opens2 || 0];
+    const fav = Math.max(...opens) > 0 ? KINDS[opens.indexOf(Math.max(...opens))] : null;
+    html = '<h4>Win rate by card</h4><div class="cardRates">' + KINDS.map((k, i) => {
+      const r = plays[i] ? wins[i]! / plays[i]! : 0;
+      return `<div class="cr k-${k}"><span class="crIc">${ICON[k]}</span><div class="crBar"><i style="width:${Math.round(r * 100)}%"></i></div>`
+        + `<b>${pct(wins[i]!, plays[i]!)}</b><small>${plays[i]} played</small></div>`;
+    }).join('') + (fav ? `<div class="crFav">Favourite opening card: ${mini(fav)} <b>${fav}</b></div>` : '') + '</div>';
+  } else if (tab === 'awards') {
+    const got = new Map(Array.from(conn.db.myAchievements.iter(), a => [a.key, a.at] as const));
+    html = `<h4>Awards <span class="sub">${got.size} of ${ACHIEVEMENTS.length}</span></h4><div class="achGrid">` + ACHIEVEMENTS.map(a => {
+      const on = got.has(a.key);
+      const aura = ITEMS.find(i => i.ach === a.key);
+      return `<div class="ach${on ? ' on' : ''}" title="${esc(a.how)}"><span class="achIc">${on ? a.icon : '🔒'}</span><b>${esc(a.name)}</b><small>${esc(a.how)}${aura ? ` · unlocks the ${nameOf(aura.id)} aura` : ''}</small></div>`;
+    }).join('') + '</div>';
+  } else {
+    const hist = Array.from(conn.db.myHistory.iter()).sort((a, b) => (a.id < b.id ? 1 : -1));
+    const MODE: Record<string, string> = { ranked: 'Ranked', casual: 'Unranked', room: 'Friend', bot: 'Online · bot', practice: 'Practice', daily: 'Daily' };
+    html = '<div class="hist">' + (hist.length ? hist.map(h => {
+      const dots = [...h.outcomes].map((o, i) => `<i class="o${o}" title="Round ${i + 1}: ${h.cards[i] === '-' ? 'too slow' : KINDS['rps'.indexOf(h.cards[i]!)]}"></i>`).join('');
+      const rc = h.ratingChange ? `<span class="${h.ratingChange > 0 ? 'up' : 'down'}">${h.ratingChange > 0 ? '+' : ''}${h.ratingChange}</span>` : '';
+      return `<div class="hr ${h.result}"><span class="hrRes">${h.result === 'win' ? 'W' : h.result === 'loss' ? 'L' : 'D'}</span>`
+        + `<div class="hrMid"><div class="hrTop"><b>${esc(h.opp)}</b><span class="hrMode">${MODE[h.mode] || h.mode}</span></div><div class="hrDots">${dots}</div></div>`
+        + `<div class="hrScore"><b>${h.you}–${h.them}</b>${rc}<small>${ago(h.at.toDate().getTime())}</small></div></div>`;
+    }).join('') : '<div class="empty">No matches yet. Play one to see your history.</div>') + '</div>';
+  }
+  $('statsSheetBody').innerHTML = html;
 }
 function ago(t: number) {
   const m = Math.floor((Date.now() - t) / 60000);
@@ -607,13 +746,6 @@ function ago(t: number) {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
-}
-$('btnStats').onclick = () => { renderStats(); $('statsModal').classList.remove('hide'); $('statsModal').scrollTop = 0; };
-$('statsClose').onclick = () => $('statsModal').classList.add('hide');
-// sheets close with their ✕, their Close/Done button, or a tap on the dimmed area around them
-for (const [id, btn] of [['statsModal', 'statsDone'], ['lookModal', 'lookDone'], ['friendsModal', 'friendsDone'], ['reportModal', '']] as const) {
-  $(id).addEventListener('click', (e: Event) => { if (e.target === $(id)) $(id).classList.add('hide'); });
-  if (btn) $(btn).onclick = () => $(id).classList.add('hide');
 }
 
 let waitStart = 0, waitTick: any = 0, waitKey = '';
@@ -639,16 +771,7 @@ function waitScreen(title: string, code: string, sub: string) {
   upd(); waitTick = setInterval(upd, 500);
 }
 
-$('btnQuick').onclick = () => {
-  $('lobbyErr').textContent = '';
-  if (!me.practiceDone) { $('lobbyErr').textContent = 'Finish one practice match first'; return; }
-  if (ONLINE_NEEDS_ACCOUNT && me.isGuest) { pendingQueue = true; return startAccount(); }
-  call('joinQueue');
-};
-$('btnFriend').onclick = () => {
-  $('lobbyErr').textContent = ''; $('friendErr').textContent = ''; $('friendModal').classList.remove('hide');
-  setTimeout(() => $('joinCode').focus(), 50);
-};
+
 $('friendClose').onclick = () => $('friendModal').classList.add('hide');
 
 // ---------- sharing ----------
@@ -672,7 +795,6 @@ $('btnCopyLink').onclick = async () => {
   try { await navigator.clipboard.writeText(link); $('btnCopyLink').textContent = 'Copied!'; setTimeout(() => { $('btnCopyLink').textContent = 'Copy'; }, 1500); }
   catch { toast(link); }
 };
-$('btnPractice').onclick = () => { $('lobbyErr').textContent = ''; dismissed = null; call('startPractice'); };
 $('btnCreate').onclick = () => { $('friendModal').classList.add('hide'); call('createRoom'); };
 $('joinCode').addEventListener('input', () => { const el = $('joinCode'); el.value = el.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
 $('joinForm').onsubmit = async (e: Event) => {
@@ -691,7 +813,7 @@ const TUT = [
     art: () => `<div class="tutRow">${tc('rock').repeat(3)}${tc('paper').repeat(3)}</div><div class="tutRow">${tc('scissors', 'hi').repeat(4)}</div>` },
   { title: 'One card per round',
     text: 'Tap a card, then press Lock In. You have 10 seconds. If you haven\'t locked in by then, you lose the round.',
-    art: () => tc('paper', 'big hi') + '<span class="num">10<small>sec</small></span>' + `<div class="tc big back">${BACK}</div>` },
+    art: () => tc('paper', 'big hi') + '<span class="num">10<small>sec</small></span>' + `<div class="tc big back">${backHtml('classic')}</div>` },
   { title: 'Win the round, score a point',
     text: 'A draw scores nothing. Played cards are gone for good, so keep track of what your opponent has left.',
     art: () => tc('rock', 'big win') + '<span class="txt">beats</span>' + tc('scissors', 'big lose') },
@@ -749,6 +871,8 @@ function onState(s: any) {
   if (s.phase === 'pick') { if (s.you.sel !== null && selInFlight === 0) localSel = s.you.sel; } else localSel = null;
 
   const entering = s.phase !== prevPhase || s.round !== prevRound;
+  setTrack(s.phase === 'over' ? null : s.round >= s.totalRounds ? 'final' : 'match');
+  if (entering && (s.phase === 'pick' || s.phase === 'prep')) flashTitle();
   renderGame(entering, firstOfGame);
   syncChat(firstOfGame);
   prevPhase = s.phase; prevRound = s.round;
@@ -757,15 +881,25 @@ function onState(s: any) {
 
 function renderGame(entering: boolean, firstOfGame: boolean) {
   const s = G;
-  $('nameOpp').innerHTML = (s.opp.isBot ? '' : tierBadge(tierOf(s.opp.rating), 'xs')) + (s.opp.avatar ? s.opp.avatar + ' ' : '') + esc(s.opp.name);
-  $('nameYou').innerHTML = tierBadge(tierOf(me ? me.rating : 1000), 'xs') + (me && me.avatar ? me.avatar + ' ' : '') + esc(s.you.name);
+  const heads = `${s.gameId}:${s.opp.avatar}:${s.opp.frame}:${s.opp.title}:${me && me.avatar}:${me && me.frame}:${me && me.title}`;
+  if ($('hud').dataset.h !== heads) {
+    $('hud').dataset.h = heads;
+    $('avYou').innerHTML = me ? avatarHtml(me.avatar, me.frame, 42) : '';
+    $('avOpp').innerHTML = avatarHtml(s.opp.avatar, s.opp.frame, 42);
+    $('ttlYou').innerHTML = me ? titleHtml(me.title) : '';
+    $('ttlOpp').innerHTML = s.opp.isBot ? `<span class="ttl bot">${s.mode === 'daily' ? 'DAILY' : 'BOT'}</span>` : titleHtml(s.opp.title);
+  }
+  $('nameYou').textContent = s.you.name;
+  $('nameOpp').textContent = s.opp.name;
   const mySkin = (me && me.skin) || 'classic';
   $('hand').dataset.skin = mySkin; $('slotYou').dataset.skin = mySkin; $('slotOpp').dataset.skin = s.opp.skin || 'classic';
-  $('watchers').textContent = s.watchers ? `👀 ${s.watchers} watching` : '';
+  $('watchers').textContent = s.watchers ? `${s.watchers} watching` : '';
   $('watchers').classList.toggle('hide', !s.watchers);
   $('totalR').textContent = s.totalRounds;
   $('round').textContent = s.round;
-  $('oppTag').textContent = s.mode === 'daily' ? 'Daily' : s.opp.isBot ? 'Bot' : 'Opp';
+  const final = s.round >= s.totalRounds && s.phase !== 'prep';
+  $('roundLbl').textContent = s.phase === 'prep' ? 'GET READY' : final ? 'FINAL ROUND' : 'ROUND';
+  document.body.classList.toggle('finalRound', final && s.phase !== 'over');
   $('sYou').textContent = s.you.score;
   $('sOpp').textContent = s.opp.score;
   renderRounds();
@@ -780,7 +914,7 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
     oppBacks = backs;
     $('oppHand').innerHTML = Array.from({ length: backs }, (_, i) => {
       const mid = (backs - 1) / 2, d = i - mid;
-      return `<span class="ob" style="--r:${(d * 4).toFixed(1)}deg;--y:${(Math.abs(d) * 1.6).toFixed(1)}px">${BACK}</span>`;
+      return `<span class="ob" style="--r:${(d * 4).toFixed(1)}deg;--y:${(Math.abs(d) * 1.6).toFixed(1)}px">${backHtml(s.opp.back)}</span>`;
     }).join('');
   }
   renderTracker();
@@ -802,18 +936,21 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
   } else if (phase === 'pick') {
     btn.disabled = !localSel || s.you.locked;
     btn.classList.add(s.you.locked ? 'done' : 'lockIn');
-    btn.innerHTML = s.you.locked ? (s.opp.placed ? 'Revealing…' : `${LOCK} Locked in · waiting for ${esc(s.opp.name)}`)
-      : localSel ? `${LOCK} Lock In` : 'Pick a card';
+    btn.innerHTML = s.you.locked ? (s.opp.placed ? 'Revealing…' : `${LOCK} Locked`)
+      : localSel ? `${LOCK} Lock in<kbd class="dk">Enter</kbd>` : 'Pick a card';
   } else {
     btn.disabled = true;
     btn.textContent = phase === 'banner' ? 'Get ready…' : phase === 'reveal' ? 'Revealing…' : phase === 'result' ? 'Next round…' : 'Match over';
   }
   btn.classList.toggle('hide', phase === 'over');
+  renderHint();
 
   // round banner
   if (phase === 'banner' && entering) {
-    $('bn0').textContent = s.round === 1 ? 'Match start' : s.round === s.totalRounds ? `Final round · ${s.you.score} – ${s.opp.score}` : `${s.you.score} – ${s.opp.score}`;
-    $('bn1').textContent = `Round ${s.round}`;
+    $('bn0').textContent = s.round === 1 ? 'Match start' : `${s.you.score} – ${s.opp.score}`;
+    $('bn1').textContent = s.round === s.totalRounds ? 'FINAL ROUND' : `ROUND ${s.round}`;
+    $('banner').classList.toggle('final', s.round === s.totalRounds);
+    $('bn2').textContent = s.round === s.totalRounds ? (s.you.score === s.opp.score ? 'Winner takes the match' : 'Last card each') : 'Choose your card · 10 seconds';
     const bn = $('banner'); bn.classList.remove('on'); void bn.offsetWidth; bn.classList.add('on');
     sfx.banner();
   } else if (phase !== 'banner') $('banner').classList.remove('on');
@@ -830,7 +967,7 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
     const sc = localHand.find((c: any) => c.id === localSel);
     setSlot('slotYou', sc ? (s.you.locked ? 'mine lockedIn' : 'mine') : 'empty', sc ? face(sc.t) : '<span class="q">Pick</span>');
     $('lblYou').textContent = s.you.locked ? 'Locked in' : sc ? 'Selected' : 'You';
-    setSlot('slotOpp', s.opp.placed ? 'down' : 'empty thinking', s.opp.placed ? BACK : '<span class="dots3"><i></i><i></i><i></i></span>');
+    setSlot('slotOpp', s.opp.placed ? 'down' : 'empty thinking', s.opp.placed ? backHtml(s.opp.back) : '<span class="dots3"><i></i><i></i><i></i></span>');
     $('lblOpp').textContent = s.opp.placed ? `${s.opp.name} · locked` : s.opp.name;
   }
   if ((phase === 'reveal' || phase === 'result') && s.reveal) {
@@ -840,7 +977,7 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
       const anim = phase === 'reveal';
       setSlot('slotYou', r.you ? 'face' + (anim ? ' slam' : '') : 'miss', r.you ? face(r.you) : '<span class="slow">Too<br>slow</span>');
       setSlot('slotOpp', r.opp ? 'face' + (anim ? ' flip' : '') : 'miss',
-        r.opp ? (anim ? `<span class="fl"><span class="fr">${face(r.opp)}</span><span class="bk">${BACK}</span></span>` : face(r.opp)) : '<span class="slow">Too<br>slow</span>');
+        r.opp ? (anim ? `<span class="fl"><span class="fr">${face(r.opp)}</span><span class="bk">${backHtml(s.opp.back)}</span></span>` : face(r.opp)) : '<span class="slow">Too<br>slow</span>');
       $('lblYou').textContent = 'You';
       if (anim) { sfx.flip(); clearTimeout(clashTimer); clashTimer = setTimeout(() => clash(r, k), 650); }
     }
@@ -848,7 +985,7 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
       if (clashDone !== k) clash(r, k);
       if (entering) {
         const res = r.result;
-        showRibbon(!r.you && r.opp ? 'Too slow' : res === 'win' ? 'Round won' : res === 'loss' ? 'Round lost' : 'Draw', res);
+        showRibbon(!r.you && r.opp ? 'Too slow · round lost' : !r.opp && r.you ? 'They were too slow!' : res === 'win' ? `You win round ${r.n}!` : res === 'loss' ? `Round ${r.n} lost` : 'Draw', res);
         if (res === 'win') bump('sYou'); if (res === 'loss') bump('sOpp');
       }
     }
@@ -862,6 +999,29 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
   renderLog();
 
   if (phase === 'over' && s.ended) showEnd();
+}
+
+const VERB: Record<string, string> = { rock: 'crushes', paper: 'wraps', scissors: 'cut' };
+const cap = (k: string) => k[0]!.toUpperCase() + k.slice(1);
+const finePointer = matchMedia('(hover:hover) and (pointer:fine)').matches;
+/** The line between the table and your hand: what to do now, or what just happened. */
+function renderHint() {
+  const s = G; let t = '';
+  if (s.phase === 'prep') {
+    const n = [0, 0, 0]; for (const c of localHand) n[KINDS.indexOf(c.t)]! += 1;
+    t = `You have ${n[0]} Rock, ${n[1]} Paper, ${n[2]} Scissors`;
+  } else if (s.phase === 'pick') {
+    t = s.you.locked ? (s.opp.placed ? 'Both locked in · revealing…' : `Locked in · waiting for ${esc(s.opp.name)}`)
+      : localSel ? (finePointer ? 'Press <kbd>Enter</kbd> to lock in, or pick another card' : 'Tap Lock in, or tap another card to change')
+      : finePointer ? 'Press <kbd>1</kbd>–<kbd>0</kbd> or click a card' : 'Tap a card to pick it';
+    if (s.round >= s.totalRounds && !s.you.locked) t = 'One card each. What have they played so far?';
+  } else if ((s.phase === 'reveal' || s.phase === 'result') && s.reveal) {
+    const r = s.reveal;
+    if (r.you && r.opp) t = r.you === r.opp ? `Both played ${cap(r.you)}` : beats(r.you, r.opp) ? `${cap(r.you)} ${VERB[r.you]} ${cap(r.opp)}` : `${cap(r.opp)} ${VERB[r.opp]} ${cap(r.you)}`;
+    else t = !r.you && !r.opp ? 'Nobody locked in' : !r.you ? 'Lock in before the timer ends' : '';
+    if (s.phase === 'result' && s.round < s.totalRounds) t += ` · round ${s.round + 1} next`;
+  }
+  if ($('hint').dataset.h !== t) { $('hint').innerHTML = t; $('hint').dataset.h = t; }
 }
 
 /** The moment the two cards meet: winner glows, loser shakes, sparks fly. */
@@ -966,12 +1126,18 @@ function showEnd() {
   const chips: string[] = [];
   if (e.reason === 'disconnect') chips.push(e.result === 'win' ? 'Opponent left' : 'You disconnected');
   if (e.reason === 'forfeit') chips.push(e.result === 'win' ? 'Opponent left' : 'You left');
+  if (G.xpGain) chips.push(`<span class="xp">+${G.xpGain} XP</span>`);
+  if (G.coinGain) chips.push(`<span class="coins"><i class="coin"></i>+${G.coinGain}</span>`);
   if (G.rated) chips.push(`<span class="${G.ratingChange >= 0 ? 'up' : 'down'}">Rating ${G.ratingChange >= 0 ? '+' : ''}${G.ratingChange}</span>`);
   if (me && !unlockedBefore && me.practiceDone && G.opp.isBot && e.reason === 'points') chips.push('<span class="up">Online play unlocked</span>');
-  if (G.mode === 'daily') { const st = dailyState(); if (st.streak) chips.push(`🔥 ${st.streak}-day streak`); }
-  if (G.xpGain) chips.push(`<span class="xp">+${G.xpGain} XP</span>`);
+  if (G.mode === 'daily') { const st = dailyState(); if (st.streak) chips.push(`${st.streak}-day streak`); }
   for (const k of achNew) { const a = achievementOf(k); if (a) chips.push(`<span class="up">${a.icon} ${esc(a.name)}</span>`); }
   $('endChips').innerHTML = chips.map(c => `<span class="ec">${c}</span>`).join('');
+  // the winner's win effect: yours at full strength, or theirs dimmed with their name on it
+  const fxLbl = $('fxLabel');
+  const theirFx = res === 'loss' && G.opp.fx && G.opp.fx !== 'confetti';
+  fxLbl.classList.toggle('hide', !theirFx);
+  if (theirFx) fxLbl.textContent = `${G.opp.name}'s win effect: ${nameOf('fx:' + G.opp.fx)}`;
   renderRematch();
   $('banner').classList.remove('on');
   $('confirmLeave').classList.add('hide');
@@ -979,8 +1145,8 @@ function showEnd() {
   if (endShown !== G.gameId) {
     endShown = G.gameId;
     showLog(false);
-    if (res === 'win') { sfx.victory(); confetti(); vibrate([30, 60, 30, 60, 80]); }
-    else if (res === 'loss') { sfx.defeat(); vibrate(120); }
+    if (res === 'win') { sfx.victory(); winEffect((me && me.fx) || 'confetti'); vibrate([30, 60, 30, 60, 80]); }
+    else if (res === 'loss') { sfx.defeat(); if (G.opp.fx && G.opp.fx !== 'confetti') winEffect(G.opp.fx, true); vibrate(120); }
     else sfx.roundDraw();
   }
 }
@@ -1045,7 +1211,7 @@ function renderRematch() {
   btn.classList.toggle('hot', hot);
   note.textContent = msg; note.className = 'rmNote' + (hot ? ' hot' : rm.oppLeft ? ' gone' : '');
   // a new opponent only makes sense for online play; practice and friend rooms just rematch or go back
-  $('btnAgain').classList.toggle('hide', !(G.mode === 'ranked' || G.mode === 'bot'));
+  $('btnAgain').classList.toggle('hide', !(G.mode === 'ranked' || G.mode === 'casual' || G.mode === 'bot'));
   btn.classList.toggle('hide', G.mode === 'daily'); // one try a day
   renderFriendBtn();
   if (G.mode === 'daily') { note.textContent = `Next challenge in ${shortTime(msToNextDay())}`; note.className = 'rmNote'; }
@@ -1059,7 +1225,7 @@ $('btnAgain').onclick = () => {
   if (!G) return;
   dismissed = G.gameId;
   $('over').classList.add('hide');
-  call('leaveGame').then(() => call('joinQueue'));
+  call('leaveGame').then(() => call(G && G.mode === 'casual' ? 'joinCasual' : mode === 'casual' ? 'joinCasual' : 'joinQueue'));
 };
 
 function pressAction() {
@@ -1077,10 +1243,16 @@ $('readyBtn').onclick = pressAction;
 
 function askExit() {
   if (!G || G.phase === 'over') return;
-  $('leaveNote').textContent = G.rated ? 'This is a ranked match. Exiting counts as a loss and costs you rating.'
-    : !G.opp.isBot ? 'Your friend wins this match.'
+  const lead = G.you.score > G.opp.score ? 'winning' : G.you.score < G.opp.score ? 'losing' : 'level';
+  const kind = G.mode === 'ranked' ? 'a ranked match' : G.mode === 'casual' ? 'an unranked match' : G.mode === 'room' ? 'a friend match' : G.mode === 'daily' ? "today's daily challenge" : 'a practice match';
+  $('leaveScore').textContent = `You're ${lead} ${G.you.score}–${G.opp.score} in ${kind}.`;
+  $('leaveNote').textContent = G.mode === 'ranked' ? `Leaving counts as a loss: you lose rating, get no XP and no coins, and ${G.opp.name} wins.`
+    : G.mode === 'casual' ? "Leaving counts as a loss, with no XP or coins. Your rating doesn't change."
+    : G.mode === 'room' ? `Your friend wins this match.`
+    : G.mode === 'daily' ? "It counts as a loss and uses up today's try."
     : me && !me.practiceDone ? 'It counts as a loss, and you still need one finished practice match to unlock online play.'
-    : 'It will count as a loss.';
+    : 'It counts as a loss.';
+  closeModals();
   $('confirmLeave').classList.remove('hide');
 }
 $('btnLeave').onclick = askExit;
@@ -1126,7 +1298,6 @@ function renderHand(deal = false) {
   const order = localHand.map((c: any) => c.id).join();
   hand.classList.toggle('wait', phase !== 'pick' && phase !== 'prep');
   hand.classList.toggle('picking', phase === 'pick' && !G.you.locked);
-  $('handCount').textContent = `· ${localHand.length}`;
   if (order !== handSig || deal) {
     handSig = order;
     hand.innerHTML = '';
@@ -1213,27 +1384,36 @@ function endDrag(e: PointerEvent) {
   } else renderGame(false, false); // catch up on anything skipped while the finger was down
 }
 
-// ---------- chat and emoji ----------
-// Only fixed emoji and phrases, one tap each: there is no typing. Incoming ones pop up as bubbles
-// under the sender's name, even with the panel closed. Muting hides the opponent's on this device.
-// Both lists must match EMOJIS and PHRASES in spacetimedb/src/index.ts (the server refuses anything else).
-const EMOJIS = ['👍', '😂', '😎', '😮', '😤', '😭', '🔥', '👏', '🤝', '🤔', '😈', '🙈', '🪨', '📄', '✂️', '🤞', '🎁', '😇'];
-const PHRASES = [
-  'Good luck!', 'Nice one!', 'Well played', 'gg', 'Thanks!', 'Oops 😅', 'Rematch?',
-  'Rock is coming 🪨', 'Paper next 📄', 'Scissors time ✂️', 'I promise 🤞', 'Trust me 😇', 'Gift for you 🎁', 'Too easy 😎',
-];
+// ---------- quick chat ----------
+// Only your loadout (set in Locker › Chat), one tap each: there is no typing. Reactions slam in as stickers,
+// phrases pop out as tickets in the sender's message colour. Muting hides the opponent's on this device.
 const MUTE_CHAT_KEY = 'rps10_chatmute';
-let chatGame = '', chatSeen = 0n, unread = 0, chatSig = '';
+let chatGame = '', chatSeen = 0n, unread = 0, chatSig = '', trayKey = '';
 let chatMuted = store.get(MUTE_CHAT_KEY) === '1';
 $('chatIc').innerHTML = CHAT;
-$('chatEmoji').innerHTML = EMOJIS.map(e => `<button type="button" class="emo" data-e="${e}" aria-label="Send ${e}">${e}</button>`).join('');
-$('chatPhrases').innerHTML = PHRASES.map(p => `<button type="button" class="phr" data-p="${esc(p)}">${esc(p)}</button>`).join('');
 $('chatMute').checked = chatMuted;
+function setChatMuted(m: boolean) {
+  chatMuted = m;
+  store.set(MUTE_CHAT_KEY, m ? '1' : null);
+  $('chatMute').checked = m;
+  if (m) { hideBubble('bubOpp'); unread = 0; renderBadge(); }
+  if (G) renderChat(true);
+}
+/** The tray: your 6 reactions and 4 phrases. */
+function renderTray() {
+  if (!me) return;
+  const lo = loadout();
+  const key = me.reactions + '|' + me.phrases + '|' + me.color;
+  if (key === trayKey) return;
+  trayKey = key;
+  $('chatEmoji').innerHTML = lo.r.map(r => `<button type="button" class="emo" data-e="${r}" aria-label="Send ${esc(reactionName(r))}">${reactionSvg(r)}</button>`).join('');
+  $('chatPhrases').innerHTML = lo.p.map(p => `<button type="button" class="phr" data-p="${esc(p)}">${ticketHtml(p, me.color, 's')}</button>`).join('');
+}
 
 const chatOpen = () => document.body.classList.contains('chatOpen');
 function showChat(open: boolean) {
   document.body.classList.toggle('chatOpen', open);
-  if (open) { showLog(false); unread = 0; renderChat(true); }
+  if (open) { showLog(false); unread = 0; renderTray(); renderChat(true); }
   renderBadge();
 }
 function renderBadge() { $('chatBadge').textContent = unread ? String(Math.min(unread, 9)) : ''; }
@@ -1249,16 +1429,17 @@ $('btnChat').onclick = () => showChat(!chatOpen());
 $('endChat').onclick = () => showChat(true);
 $('chatClose').onclick = () => showChat(false);
 $('chatDim').onclick = () => showChat(false);
-$('chatMute').onchange = () => {
-  chatMuted = $('chatMute').checked;
-  store.set(MUTE_CHAT_KEY, chatMuted ? '1' : null);
-  if (chatMuted) { hideBubble('bubOpp'); unread = 0; renderBadge(); }
-  renderChat(true);
+$('chatMute').onchange = () => setChatMuted($('chatMute').checked);
+$('chatEdit').onclick = () => {
+  showChat(false);
+  if (G && !G.ended) { toast('Edit your quick chat in the Locker after this match.'); return; }
+  openSheet('lockerSheet', 'chat');
 };
 
 function chatRows() {
   return Array.from(conn.db.myChat.iter()).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
+const chatItem = (m: any, color: string) => (m.kind === 'emoji' ? `<span class="stk">${reactionSvg(m.body)}</span>` : ticketHtml(m.body, color));
 /** New messages since we last looked: bubble them, count unread, and sound. */
 function syncChat(firstOfGame: boolean) {
   const rows = chatRows();
@@ -1271,39 +1452,44 @@ function syncChat(firstOfGame: boolean) {
     for (const m of rows) {
       if (m.id <= chatSeen) continue;
       if (!m.mine && chatMuted) continue;
-      bubble(m.mine ? 'bubYou' : 'bubOpp', m.kind, m.body);
+      bubble(m.mine ? 'bubYou' : 'bubOpp', m.kind, m.body, m.mine ? (me ? me.color : 'green') : G.opp.color);
       if (!m.mine) {
         sfx.msg();
         if (!chatOpen()) unread++;
-        if (G.phase === 'over' && !chatOpen()) toast(`${G.opp.name}: ${m.body}`);
+        if (G.phase === 'over' && !chatOpen()) toast(`${G.opp.name}: ${m.kind === 'emoji' ? reactionName(m.body) : m.body}`);
       }
     }
     chatSeen = last;
   }
   $('chatMute').parentElement.classList.toggle('hide', !!G.opp.isBot);
+  renderTray();
   renderBadge();
   renderChat(false);
 }
 function renderChat(scroll: boolean) {
   const rows = chatRows().filter(m => m.mine || !chatMuted);
   const sig = rows.map(m => String(m.id)).join() + (chatMuted ? 'm' : '');
-  const list = $('chatList');
   if (sig === chatSig && !scroll) return;
   const grew = sig !== chatSig;
   chatSig = sig;
-  list.innerHTML = rows.length ? rows.map(m =>
-    `<div class="cm ${m.mine ? 'me' : 'them'}${m.kind === 'emoji' ? ' emoji' : ''}"><span>${esc(m.body)}</span></div>`).join('')
-    : `<div class="empty">${chatMuted ? 'Opponent muted' : 'Send an emoji or a quick message 👇'}</div>`;
-  if (grew || scroll) list.scrollTop = list.scrollHeight;
+  const html = rows.length ? rows.map(m =>
+    `<div class="cm ${m.mine ? 'me' : 'them'}${m.kind === 'emoji' ? ' emoji' : ''}">${chatItem(m, m.mine ? (me ? me.color : 'green') : G ? G.opp.color : 'green')}</div>`).join('')
+    : `<div class="empty">${chatMuted ? 'Opponent muted' : 'Send a reaction or a quick message'}</div>`;
+  for (const id of ['chatList', 'sideChat']) {
+    const list = $(id);
+    list.innerHTML = id === 'sideChat' ? `<h4>Chat <button class="link sm" type="button" data-open-chat>Send</button></h4>${html}` : html;
+    if (grew || scroll) list.scrollTop = list.scrollHeight;
+  }
 }
+$('sideChat').addEventListener('click', (e: Event) => { if ((e.target as HTMLElement).closest('[data-open-chat]')) showChat(true); });
 const bubTimers: Record<string, any> = {};
-function bubble(id: string, kind: string, body: string) {
+function bubble(id: string, kind: string, body: string, color: string) {
   const el = $(id);
   el.className = 'bub ' + (id === 'bubYou' ? 'you' : 'opp') + (kind === 'emoji' ? ' emoji' : ' text');
-  el.textContent = body;
+  el.innerHTML = kind === 'emoji' ? `<span class="burst"></span><span class="stk">${reactionSvg(body)}</span>` : ticketHtml(body, color, 'say');
   void el.offsetWidth; el.classList.add('on');
   clearTimeout(bubTimers[id]);
-  bubTimers[id] = setTimeout(() => hideBubble(id), kind === 'emoji' ? 2200 : 4000);
+  bubTimers[id] = setTimeout(() => hideBubble(id), kind === 'emoji' ? 2200 : 3800);
 }
 function hideBubble(id: string) { $(id).classList.remove('on'); }
 
@@ -1316,13 +1502,13 @@ function renderFriendBtn() {
   const st = person ? G.opp.friend : 'friends';
   b.classList.toggle('hide', !person || st === 'friends');
   b.disabled = st === 'out';
-  b.textContent = st === 'in' ? `✅ Accept ${G ? G.opp.name : ''}'s friend request` : st === 'out' ? 'Friend request sent' : '➕ Add friend';
+  b.textContent = st === 'in' ? `Accept ${G ? G.opp.name : ''}'s friend request` : st === 'out' ? 'Friend request sent' : 'Add friend';
   $('btnReport').classList.toggle('hide', !person || reportedGame === (G && G.gameId));
 }
 $('btnAddFriend').onclick = () => {
   if (!G) return;
   const was = G.opp.friend;
-  call('addOpponent').then(ok => { if (ok) toast(was === 'in' ? `You and ${G ? G.opp.name : 'they'} are now friends 🤝` : 'Friend request sent'); });
+  call('addOpponent').then(ok => { if (ok) toast(was === 'in' ? `You and ${G ? G.opp.name : 'they'} are now friends` : 'Friend request sent'); });
 };
 
 let reportedGame: string | null = null;
@@ -1348,39 +1534,277 @@ $('btnReport').onclick = openReport;
 $('chatReport').onclick = () => { showChat(false); openReport(); };
 $('reportClose').onclick = () => $('reportModal').classList.add('hide');
 
-// your look: avatar, frame and card style
-function lookUnlocks() {
-  const achs = new Set(Array.from(conn.db.myAchievements.iter(), a => a.key));
-  return { achs, p: { played: me.wins + me.losses + me.draws, wins: me.wins, ach: achs.size } };
-}
-function renderLook() {
-  const { achs } = lookUnlocks();
-  $('lookPreview').innerHTML = avatarHtml(me.name, me.avatar, me.frame, 'lg')
-    + `<div class="lpCards" data-skin="${me.skin || 'classic'}">${['rock', 'paper', 'scissors'].map(k => `<div class="tc">${face(k)}</div>`).join('')}</div>`;
-  $('avGrid').innerHTML = [`<button class="avPick${!me.avatar ? ' on' : ''}" data-av="">${esc(initialOf(me.name))}</button>`]
-    .concat(AVATARS.map(a => `<button class="avPick${me.avatar === a ? ' on' : ''}" data-av="${a}">${a}</button>`)).join('');
-  $('frGrid').innerHTML = FRAMES.map(f => {
-    const open = !f.ach || achs.has(f.ach);
-    return `<button class="frPick${me.frame === f.key ? ' on' : ''}${open ? '' : ' locked'}" data-fr="${f.key}" ${open ? '' : 'disabled'}>`
-      + `${avatarHtml(me.name, me.avatar, f.key, 'sm')}<b>${f.name}</b><small>${open ? (me.frame === f.key ? 'On' : '') : '🔒 ' + f.how}</small></button>`;
-  }).join('');
-  const lvl = levelOf(myStats()?.xp || 0).level;
-  $('skGrid').innerHTML = SKINS.map(k => {
-    const open = me.allSkins || lvl >= k.level;
-    return `<button class="skPick${(me.skin || 'classic') === k.key ? ' on' : ''}${open ? '' : ' locked'}" data-sk="${k.key}" ${open ? '' : 'disabled'}>`
-      + `<div class="tc" data-skin="${k.key}">${face('rock')}</div><b>${k.name}</b><small>${open ? '' : '🔒 Level ' + k.level}</small></button>`;
+// ---------- Locker: only what you own ----------
+const LOOK_FIELD: Partial<Record<ItemKind, string>> = { avatar: 'avatar', aura: 'frame', skin: 'skin', back: 'back', color: 'color', fx: 'fx', title: 'title' };
+const wearing = (kind: ItemKind, key: string) => (me as any)[LOOK_FIELD[kind]!] === key;
+let chatSlot: { kind: 'r' | 'p'; i: number } | null = null;
+const loadout = () => ({
+  r: me.reactions ? String(me.reactions).split(',').filter(Boolean) : [],
+  p: me.phrases ? String(me.phrases).split('|').filter(Boolean) : [],
+});
+function ownedTiles(kind: ItemKind, mine: Set<string>, size = 56) {
+  return itemsOf(kind).filter(i => mine.has(i.id)).map(i => {
+    const on = wearing(kind, i.key);
+    return `<button class="own${on ? ' eq' : ''}" type="button" data-eq="${kind}" data-key="${esc(i.key)}" aria-pressed="${on}">${on ? '<span class="badgeOn">On</span>' : ''}${itemArt(i.id, size, me.avatar)}<b>${esc(nameOf(i.id))}</b><small>${on ? 'Equipped' : 'Tap to use'}</small></button>`;
   }).join('');
 }
-function saveLook(change: Partial<{ avatar: string; frame: string; skin: string }>) {
-  $('lookErr').textContent = '';
-  const next = { avatar: me.avatar, frame: me.frame, skin: me.skin || 'classic', ...change };
-  call('setLook', next);
+const countOwned = (kind: ItemKind, mine: Set<string>) => itemsOf(kind).filter(i => mine.has(i.id) && i.key !== '').length;
+const moreLink = (tab: string, text: string, sub: string) => `<button class="moreLink" type="button" data-store="${tab}"><b>${text} ›</b><small>${sub}</small></button>`;
+function nextFree(kind: ItemKind) {
+  const lvl = myLevel().level;
+  const n = itemsOf(kind).filter(i => i.level && i.level > lvl).sort((a, b) => a.level! - b.level!)[0];
+  return n ? `Next free: ${nameOf(n.id)} at level ${n.level}` : 'All unlocked on the Level road';
 }
-$('avGrid').addEventListener('click', (e: Event) => { const b = (e.target as HTMLElement).closest('[data-av]') as HTMLElement | null; if (b) saveLook({ avatar: b.dataset.av! }); });
-$('frGrid').addEventListener('click', (e: Event) => { const b = (e.target as HTMLElement).closest('[data-fr]') as HTMLElement | null; if (b && !b.hasAttribute('disabled')) saveLook({ frame: b.dataset.fr! }); });
-$('skGrid').addEventListener('click', (e: Event) => { const b = (e.target as HTMLElement).closest('[data-sk]') as HTMLElement | null; if (b && !b.hasAttribute('disabled')) saveLook({ skin: b.dataset.sk! }); });
-$('btnLook').onclick = () => { $('lookErr').textContent = ''; renderLook(); $('lookModal').classList.remove('hide'); };
-$('lookClose').onclick = () => $('lookModal').classList.add('hide');
+function renderLocker() {
+  const mine = owned();
+  $('lockerSheetTop').innerHTML = `<div class="lkTop">${avatarHtml(me.avatar, me.frame, 64)}<span class="lkWho"><b>${esc(me.name)}</b>${titleHtml(me.title)}</span>${skinTrio(me.skin, 'sm')}</div>`;
+  const tab = sheetTab.lockerSheet;
+  let html = '';
+  if (tab === 'cards') {
+    html = `<div class="h4"><span>Your card styles</span><span class="gold">${countOwned('skin', mine)} owned</span></div><div class="ownGrid">${ownedTiles('skin', mine)}</div>`
+      + `<div class="h4"><span>Card back</span><span class="gold">what your opponent sees</span></div><div class="ownGrid">${ownedTiles('back', mine)}</div>`
+      + `<div class="moreRow">${moreLink('skin', 'Store', `${itemsOf('skin').filter(i => !mine.has(i.id)).length} more card styles`)}${moreLink('road', 'Level road', nextFree('skin'))}</div>`;
+  } else if (tab === 'chat') {
+    const lo = loadout();
+    const slot = (kind: 'r' | 'p', i: number, content: string) =>
+      `<button class="slotBtn ${kind === 'r' ? 'rSlot' : 'pSlot'}${chatSlot && chatSlot.kind === kind && chatSlot.i === i ? ' sel' : ''}${content ? '' : ' empty'}" type="button" data-slot="${kind}${i}">${content || '+'}</button>`;
+    html = `<div class="h4"><span>Your quick chat</span><span class="gold">what shows in a match</span></div>`
+      + `<div class="loadout"><div class="rRow">${Array.from({ length: REACTION_SLOTS }, (_, i) => slot('r', i, lo.r[i] ? reactionSvg(lo.r[i]!) : '')).join('')}</div>`
+      + `<div class="pRow">${Array.from({ length: PHRASE_SLOTS }, (_, i) => slot('p', i, lo.p[i] ? ticketHtml(lo.p[i]!, me.color, 's') : '')).join('')}</div></div>`
+      + `<p class="muted small">${chatSlot ? 'Now tap a reaction or phrase below to put it in that slot. Tap the slot again to empty it.' : 'Tap a slot, then an item.'}</p>`
+      + `<div class="h4"><span>Your chat packs</span><span class="gold">${itemsOf('pack').filter(i => mine.has(i.id)).length} owned</span></div>`
+      + itemsOf('pack').filter(i => mine.has(i.id)).map(pk => {
+        const rs = reactionsInPack(pk.key), ps = phrasesInPack(pk.key);
+        return `<div class="pack"><b>${esc(nameOf(pk.id))}</b><div class="packItems">${rs.map(r => `<button class="rx${lo.r.includes(r) ? ' used' : ''}" type="button" data-pick="r" data-v="${r}" title="${esc(reactionName(r))}">${reactionSvg(r)}</button>`).join('')}${ps.map(ph => `<button class="px${lo.p.includes(ph) ? ' used' : ''}" type="button" data-pick="p" data-v="${esc(ph)}">${ticketHtml(ph, me.color, 's')}</button>`).join('')}</div></div>`;
+      }).join('')
+      + `<div class="h4"><span>Message colour</span><span class="gold">your phrase tickets</span></div><div class="ownGrid">${ownedTiles('color', mine)}</div>`
+      + `<div class="moreRow">${moreLink('pack', 'More chat packs', `${itemsOf('pack').filter(i => !mine.has(i.id)).length} more in the Store and on the Level road`)}</div>`;
+  } else {
+    html = `<div class="h4"><span>Your avatars</span><span class="gold">${countOwned('avatar', mine)} owned</span></div><div class="ownGrid">${ownedTiles('avatar', mine, 60)}</div>`
+      + `<div class="h4"><span>Your auras</span><span class="gold">${countOwned('aura', mine)} owned</span></div><div class="ownGrid">${ownedTiles('aura', mine, 48)}</div>`
+      + `<div class="h4"><span>Title and win effect</span><span class="gold">Level road only</span></div>`
+      + (countOwned('title', mine) ? `<div class="ownGrid">${ownedTiles('title', mine)}</div>` : `<div class="infoRow"><span class="ttl">—</span><span><b>Title: none yet</b><small>${nextFree('title')}</small></span></div>`)
+      + `<div class="ownGrid">${ownedTiles('fx', mine)}</div>`
+      + `<div class="moreRow">${moreLink('avatar', 'Store', 'More avatars and auras')}${moreLink('awards', 'Awards', 'Auras you earn')}</div>`;
+  }
+  html += '<p class="muted small ctr">The Locker only shows what you own. New things appear here the moment you buy or unlock them.</p>';
+  $('lockerSheetBody').innerHTML = html;
+}
+$('lockerSheet').addEventListener('click', (e: Event) => {
+  const t = e.target as HTMLElement;
+  const eq = t.closest('[data-eq]') as HTMLElement | null;
+  if (eq) { if (!wearing(eq.dataset.eq as ItemKind, eq.dataset.key!)) call('equip', { kind: eq.dataset.eq, key: eq.dataset.key }).then(ok => ok && sfx.select()); return; }
+  const more = t.closest('[data-store]') as HTMLElement | null;
+  if (more) {
+    const where = more.dataset.store!;
+    if (where === 'road') openSheet('roadSheet'); else if (where === 'awards') openSheet('statsSheet', 'awards'); else openSheet('storeSheet', where);
+    return;
+  }
+  const sl = t.closest('[data-slot]') as HTMLElement | null;
+  if (sl) {
+    const kind = sl.dataset.slot![0] as 'r' | 'p', i = Number(sl.dataset.slot!.slice(1));
+    if (chatSlot && chatSlot.kind === kind && chatSlot.i === i) {
+      // tapping the selected slot again empties it
+      const lo = loadout(); (kind === 'r' ? lo.r : lo.p).splice(i, 1); chatSlot = null;
+      call('setLoadout', { reactions: lo.r, phrases: lo.p });
+    } else chatSlot = { kind, i };
+    renderLocker(); return;
+  }
+  const pk = t.closest('[data-pick]') as HTMLElement | null;
+  if (pk) {
+    const kind = pk.dataset.pick as 'r' | 'p', v = pk.dataset.v!;
+    const lo = loadout(), list = kind === 'r' ? lo.r : lo.p, max = kind === 'r' ? REACTION_SLOTS : PHRASE_SLOTS;
+    const at = list.indexOf(v);
+    if (at >= 0) list.splice(at, 1);
+    const i = chatSlot && chatSlot.kind === kind ? Math.min(chatSlot.i, list.length) : list.length;
+    if (at < 0 || chatSlot) { if (i < max) list.splice(i, list.length > i && list.length >= max ? 1 : 0, v); else list[max - 1] = v; }
+    chatSlot = null;
+    call('setLoadout', { reactions: list === lo.r ? lo.r.slice(0, max) : lo.r, phrases: list === lo.p ? lo.p.slice(0, max) : lo.p });
+    renderLocker();
+  }
+});
+
+// ---------- Store ----------
+const priceOf = (it: { id: string; price?: number }) => (info()?.dealItem === it.id ? info().dealPrice : it.price ?? 0);
+const matchesFor = (n: number) => Math.max(1, Math.ceil(n / 30));
+function renderStore() {
+  const mine = owned();
+  const tab = sheetTab.storeSheet as ItemKind;
+  const d = info();
+  const deal = d ? ITEM.get(d.dealItem) : undefined;
+  let html = '';
+  if (deal) {
+    html += `<button class="dealCard" type="button" data-buy="${deal.id}"><span class="dealArt">${itemArt(deal.id, 64, me.avatar)}</span><span class="dealTx"><small>DAILY DEAL · ENDS IN ${shortTime(msToNextDay()).toUpperCase()}</small><b>${esc(nameOf(deal.id))}${deal.kind === 'skin' ? ' cards' : ''}</b><span><s>${fmt(deal.price!)}</s> <i class="coin"></i>${fmt(d.dealPrice)}</span></span>${mine.has(deal.id) ? '<span class="ownTag">Owned</span>' : ''}</button>`;
+  }
+  const items = ITEMS.filter(i => i.kind === tab && i.price !== undefined).sort((a, b) => a.price! - b.price!);
+  html += `<div class="h4"><span>${tab === 'skin' ? 'Card styles' : tab === 'pack' ? 'Chat packs' : tab === 'avatar' ? 'Avatars' : 'Auras'}</span><span class="gold">Sorted by price</span></div><div class="shopGrid">`
+    + items.map(it => {
+      const has = mine.has(it.id), price = priceOf(it);
+      const tag = it.level ? `Free at level ${it.level}` : 'Store only';
+      return `<button class="shopItem${has ? ' has' : ''}" type="button" data-buy="${it.id}">${itemArt(it.id, 58, me.avatar)}<b>${esc(nameOf(it.id))}</b><small>${tag}</small>`
+        + `<span class="price">${has ? '<span class="ownTag">Owned</span>' : `<i class="coin"></i>${fmt(price)}`}</span></button>`;
+    }).join('') + '</div>';
+  if (tab === 'aura') html += '<p class="muted small ctr">Rookie, Blaze, Sunrise, Gold and Diamond auras are earned, never sold.</p>';
+  html += `<p class="muted small ctr">Coins come from playing: about 30 a match. Things you can't afford show how many coins you still need.</p>`;
+  $('storeSheetBody').innerHTML = html;
+}
+$('storeSheet').addEventListener('click', (e: Event) => {
+  const b = (e.target as HTMLElement).closest('[data-buy]') as HTMLElement | null;
+  if (b) openBuy(b.dataset.buy!);
+});
+let buyId = '';
+function openBuy(id: string) { buyId = id; renderBuy(); $('buyModal').classList.remove('hide'); }
+function renderBuy() {
+  const it = ITEM.get(buyId); if (!it) return;
+  const has = owned().has(it.id), price = priceOf(it), lvl = myLevel().level, need = price - coins();
+  const preview = it.kind === 'skin' ? skinTrio(it.key) : it.kind === 'pack'
+    ? `<span class="packPrev">${reactionsInPack(it.key).map(r => reactionSvg(r)).join('')}${phrasesInPack(it.key).map(p => ticketHtml(p, me.color, 's')).join('')}</span>`
+    : itemArt(it.id, 96, me.avatar);
+  $('buyBody').innerHTML = `<button class="shX" type="button" data-close aria-label="Close">✕</button>`
+    + `<small class="kindLbl">${KIND_LABEL[it.kind].toUpperCase()}</small><h2>${esc(nameOf(it.id))}</h2><div class="buyPrev">${preview}</div><p class="muted">${esc(descOf(it.id))}</p>`
+    + `<div class="buyRows"><div><span>Price</span><b><i class="coin"></i>${fmt(price)}${price !== it.price ? ` <s>${fmt(it.price!)}</s>` : ''}</b></div><div><span>You have</span><b><i class="coin"></i>${fmt(coins())}</b></div>`
+    + (it.level ? `<div class="free"><span>Free instead at level ${it.level}</span><b>you're level ${lvl}</b></div>` : '') + '</div>'
+    + (has ? '<button class="btn primary" type="button" data-act="equip">Equip now</button>'
+      : need > 0 ? `<button class="btn" type="button" disabled>Need ${fmt(need)} more coins · about ${matchesFor(need)} matches</button>`
+      : `<button class="btn primary" type="button" data-act="buy">Buy for ${fmt(price)}</button>`)
+    + '<div class="err" id="buyErr"></div>';
+}
+$('buyModal').addEventListener('click', async (e: Event) => {
+  const t = e.target as HTMLElement;
+  if (t === $('buyModal') || t.closest('[data-close]')) { $('buyModal').classList.add('hide'); return; }
+  const act = (t.closest('[data-act]') as HTMLElement | null)?.dataset.act;
+  const it = ITEM.get(buyId); if (!it || !act) return;
+  if (act === 'buy') {
+    if (await call('buyItem', { item: it.id })) { sfx.unlock(); burstAt($('buyBody').querySelector('.buyPrev'), ['#ffc83d', '#fff3c4', '#3ee6a0'], 24); vibrate([15, 30, 15]); }
+  } else if (act === 'equip') {
+    if (it.kind === 'pack') { $('buyModal').classList.add('hide'); openSheet('lockerSheet', 'chat'); return; }
+    if (await call('equip', { kind: it.kind, key: it.key })) { $('buyModal').classList.add('hide'); toast(`${nameOf(it.id)} equipped`); }
+  }
+});
+
+// ---------- Level road ----------
+function renderRoad() {
+  const { level, into, need } = myLevel();
+  const mine = owned();
+  $('roadSheetTop').innerHTML = `<div class="rdTop"><span class="lvlNum">${level}</span><span class="lvlInfo"><span class="lvlTop"><b>Level ${level}</b><small>${into} / ${need} XP</small></span><span class="lvlBar"><i style="width:${Math.max(2, Math.round(into / need * 100))}%"></i></span></span></div>`;
+  const next = ROAD.find(st => st.level > level);
+  $('roadSheetBody').innerHTML = '<div class="road">' + ROAD.map(st => {
+    const got = st.level <= level, isNext = next && st.level === next.level, top = st.level === 50;
+    const what = st.items.length ? st.items.map(i => `<span class="rsItem">${itemArt(i.id, 34)}<b>${esc(nameOf(i.id))}</b><small>${KIND_LABEL[i.kind]}${i.price && !got && !mine.has(i.id) ? ` · or ${fmt(i.price)} coins` : ''}</small></span>`).join('')
+      : '<span class="rsItem coinsOnly"><i class="coin"></i><b>Coins</b></span>';
+    const status = got ? '<span class="rsGot">Got it</span>' : isNext ? `<span class="rsNext">${xpForLevel(st.level) - (myStats()?.xp || 0)} XP to go</span>` : '';
+    return `<div class="rs${got ? ' got' : ''}${isNext ? ' next' : ''}${top ? ' top' : ''}${st.items.length ? '' : ' plain'}"><span class="rsN">${st.level}</span><div class="rsBody">${what}<small class="rsCoins">+${st.coins} coins${st.level % 5 === 0 ? ' · milestone' : ''}</small></div>${status}</div>`;
+  }).join('') + '</div><p class="muted small ctr">Rewards arrive by themselves the moment you level up. XP and levels never go down, and never reset.</p>';
+}
+
+// ---------- Leaderboard: this week and this month ----------
+let boardFriends = false;
+function renderBoardSheet() {
+  const week = sheetTab.boardSheet === 'week';
+  const r: any = first(conn.db.myRank.iter());
+  const day = info()?.day;
+  const resetIn = day ? (() => { const dow = (day + 3) % 7; const ms = (7 - dow) * 86400000 - (Date.now() % 86400000); return shortTime(ms); })() : '';
+  const season = first(conn.db.seasonInfo.iter());
+  $('boardSheetTop').innerHTML = `<div class="bdChips"><button type="button" class="chip${boardFriends ? '' : ' on'}" data-bf="0">Everyone</button><button type="button" class="chip${boardFriends ? ' on' : ''}" data-bf="1">Friends</button>`
+    + `<span class="muted small">${week ? `Resets in ${resetIn}` : season ? `${seasonName(season.key)} season · ends in ${shortTime(msToSeasonEnd())}` : ''}</span></div>`;
+  type Row = { identity: any; name: string; v: number; avatar: string; frame: string; title: string; me?: boolean };
+  let rows: Row[];
+  if (boardFriends) {
+    rows = Array.from(conn.db.friendsBoard.iter()).filter(f => week || f.ranked)
+      .map(f => ({ identity: f.identity, name: f.name, v: week ? f.points : f.rating, avatar: f.avatar, frame: f.frame, title: f.title, me: f.me }))
+      .sort((a, b) => b.v - a.v);
+  } else if (week) rows = Array.from(conn.db.weeklyBoard.iter()).map(w => ({ identity: w.identity, name: w.name, v: w.points, avatar: w.avatar, frame: w.frame, title: w.title })).sort((a, b) => b.v - a.v);
+  else rows = Array.from(conn.db.leaderboard.iter()).map(l => ({ identity: l.identity, name: l.name, v: l.rating, avatar: l.avatar, frame: l.frame, title: l.title })).sort((a, b) => b.v - a.v);
+  const val = (v: number) => (week ? `${v} pts` : `<span class="tier">${tierBadge(tierOf(v), 'xs')}${fmt(v)}</span>`);
+  const isMe = (x: Row) => x.me || (me && x.identity.isEqual(me.identity));
+  const podium = rows.slice(0, 3);
+  const order = [1, 0, 2].filter(i => podium[i]);
+  let html = '';
+  if (!rows.length) html = `<div class="empty">${week ? 'Nobody has played ranked this week yet. Win a ranked match to top the board!' : 'No ranked games this season yet. Be the first on the board!'}</div>`;
+  else {
+    html += '<div class="podium">' + order.map(i => {
+      const x = podium[i]!;
+      return `<div class="pd p${i + 1}${isMe(x) ? ' mine' : ''}">${avatarHtml(x.avatar, x.frame, i === 0 ? 62 : 52)}<b>${esc(x.name)}</b><small>${val(x.v)}</small><span class="step">${i + 1}</span></div>`;
+    }).join('') + '</div>';
+    html += '<div class="rows">' + rows.slice(3, 10).map((x, i) =>
+      `<div class="rw${isMe(x) ? ' mine' : ''}"><span class="n">${i + 4}</span>${avatarHtml(x.avatar, x.frame, 32)}<span class="nm">${esc(x.name)}${titleHtml(x.title)}</span><span class="pt">${val(x.v)}</span></div>`).join('') + '</div>';
+  }
+  if (!boardFriends && me) {
+    const rank = week ? r?.weekRank : r?.monthRank;
+    const myV = week ? (r?.weekPoints || 0) : me.rating;
+    const n = nextTier(me.rating);
+    const note = week ? (rank ? (rank > 1 ? 'Win ranked matches to climb' : "You're top of the week!") : 'Win a ranked match to get on this week\'s board')
+      : n ? `${n.min - me.rating} rating to ${n.name}` : 'Top rank';
+    html += `<div class="meRow"><div class="rw"><span class="n">${rank || '–'}</span>${avatarHtml(me.avatar, me.frame, 32)}<span class="nm">${esc(me.name)} (you)<small>${note}</small></span><span class="pt">${val(myV)}</span></div></div>`;
+  }
+  if (!week && season && season.champ) html += `<p class="champ">Last season's champion: <b>${esc(season.champ)}</b> ${season.champRating}</p>`;
+  html += `<p class="muted small ctr">${week ? 'This week: ranked matches only. 3 points for a win, 1 for a draw. Unranked, friend rooms, practice and bots don\'t count.' : 'This month: your ranked rating. A new season starts on the 1st.'}</p>`;
+  $('boardSheetBody').innerHTML = html;
+}
+$('boardSheet').addEventListener('click', (e: Event) => {
+  const b = (e.target as HTMLElement).closest('[data-bf]') as HTMLElement | null;
+  if (b) { boardFriends = b.dataset.bf === '1'; renderBoardSheet(); }
+});
+
+// ---------- Settings ----------
+function settingsPage(id: string) {
+  for (const p of ['setMain', 'setDelete', 'setBugPage']) $(p).classList.toggle('hide', p !== id);
+  $('setTitle').textContent = id === 'setDelete' ? 'Delete account' : id === 'setBugPage' ? 'Report a bug' : 'Settings';
+  $('settingsBody').scrollTop = 0;
+  if (id === 'setDelete') {
+    const lvl = myLevel().level;
+    $('delList').innerHTML = [`Username ${esc(me.name)} and your sign-in`, `Level ${lvl}, your XP and ${fmt(coins())} coins`,
+      'Everything you own: card styles, avatars, auras, chat packs', 'Stats, match history, achievements and friends', 'Your place on the leaderboards']
+      .map(x => `<li>${x}</li>`).join('');
+    $('delInput').value = ''; $('delErr').textContent = ''; $('delGo').disabled = true;
+  }
+  if (id === 'setBugPage') { $('bugErr').textContent = ''; }
+}
+function renderSettings() {
+  $('setSound').checked = !isMuted();
+  $('setMusic').checked = isMusicOn();
+  $('setVibe').checked = PREF.vibe();
+  $('setMotion').checked = PREF.motion();
+  $('setChat').checked = !chatMuted;
+  const inMatch = !!G && !G.ended && showing('scrGame');
+  $('setMatch').classList.toggle('hide', !inMatch);
+  $('setReport').classList.toggle('hide', !inMatch || !G || G.opp.isBot);
+  renderAccount();
+  $('setVer').textContent = `RPS 10 · version ${VERSION}`;
+  $('setContact').href = SUPPORT_EMAIL ? `mailto:${SUPPORT_EMAIL}` : './privacy.html#contact';
+}
+$('setSound').onchange = () => { setMuted(!$('setSound').checked); };
+$('setMusic').onchange = () => { setMusicOn($('setMusic').checked); };
+$('setVibe').onchange = () => { store.set('rps10_vibe', $('setVibe').checked ? '1' : '0'); setVibration($('setVibe').checked); };
+$('setMotion').onchange = () => { const on = $('setMotion').checked; store.set('rps10_motion', on ? '1' : '0'); setReducedMotion(on); document.body.classList.toggle('calm', on); };
+$('setChat').onchange = () => setChatMuted(!$('setChat').checked);
+$('setHow').onclick = () => { closeSheet('settingsSheet'); if (!G || G.ended) openTutorial(false); else toast('How to play is in the lobby, after this match.'); };
+$('setBug').onclick = () => settingsPage('setBugPage');
+$('bugBack').onclick = () => settingsPage('setMain');
+$('bugGo').onclick = async () => {
+  $('bugErr').textContent = '';
+  const device = `${navigator.userAgent.slice(0, 160)} · ${innerWidth}×${innerHeight}`;
+  if (await call('reportBug', { text: $('bugText').value, version: VERSION, device })) {
+    $('bugText').value = ''; settingsPage('setMain'); toast('Thanks! Your bug report was sent.');
+  }
+};
+$('delBack').onclick = () => settingsPage('setMain');
+$('delInput').addEventListener('input', () => { $('delGo').disabled = $('delInput').value.trim() !== 'DELETE'; });
+$('delGo').onclick = async () => {
+  $('delGo').disabled = true;
+  if (!await call('deleteAccount', { confirm: $('delInput').value.trim() })) { $('delGo').disabled = false; return; }
+  closeModals();
+  // a fresh start: forget this device's guest login and any Google sign-in
+  store.set(TOKEN_KEY, null);
+  if (google) { google = null; store.set(GOOGLE_KEY, null); try { const auth = await authReady; if (auth) await auth.signOutUser(); } catch {} }
+  notice = 'Your account was deleted. You are now a new guest.';
+  connect();
+};
+$('setReport').onclick = () => { closeSheet('settingsSheet'); openReport(); };
+$('setLeave').onclick = () => { closeSheet('settingsSheet'); askExit(); };
+$('btnGameSet').onclick = () => { openSheet('settingsSheet'); settingsPage('setMain'); };
+$('btnSettings').onclick = () => { openSheet('settingsSheet'); settingsPage('setMain'); };
+$('loadRetry').onclick = () => connect();
 
 // friends list
 const STATUS = (f: any) => f.state === 'in' ? 'Wants to be friends' : f.state === 'out' ? 'Request sent' : f.playing ? '🟢 In a match' : f.online ? '🟢 Online' : 'Offline';
@@ -1399,7 +1823,7 @@ function renderFriends() {
       else if (f.online) acts += `<button class="mini go" data-act="invite" data-id="${id}" ${busy ? 'disabled' : ''}>Invite</button>`;
       acts += `<button class="mini dim" data-act="unfriend" data-id="${id}" data-name="${esc(f.name)}" aria-label="Remove friend">⋯</button>`;
     }
-    return `<div class="fr ${f.state}${f.online ? ' on' : ''}">${avatarHtml(f.name, f.avatar, f.frame, 'sm')}`
+    return `<div class="fr ${f.state}${f.online ? ' on' : ''}">${avatarHtml(f.avatar, f.frame, 36)}`
       + `<div class="frMid"><b>${f.state === 'friends' ? tierBadge(tierOf(f.rating), 'xs') : ''}${esc(f.name)}</b><small>${STATUS(f)}</small></div>${acts}</div>`;
   }).join('') : '<div class="empty">No friends yet. Add someone by their username.</div>';
 }
@@ -1441,11 +1865,11 @@ let invitesSeen: Set<string> | null = null;
 function renderInvites() {
   const inv = Array.from(conn.db.myInvites.iter());
   const ids = inv.map(i => String(i.id));
-  if (invitesSeen) for (const i of inv) if (!invitesSeen.has(String(i.id))) { sfx.msg(); vibrate([20, 40, 20]); toast(`${i.avatar || '🎮'} ${i.fromName} invited you to play!`); }
+  if (invitesSeen) for (const i of inv) if (!invitesSeen.has(String(i.id))) { sfx.msg(); vibrate([20, 40, 20]); toast(`${i.fromName} invited you to play!`); }
   invitesSeen = new Set(ids);
   const bar = $('inviteBar');
   bar.classList.toggle('hide', !inv.length);
-  bar.innerHTML = inv.slice(0, 3).map(i => `<div class="inv"><span class="invAv">${i.avatar || '🎮'}</span><span class="invTx"><b>${esc(i.fromName)}</b> invited you to a match</span>`
+  bar.innerHTML = inv.slice(0, 3).map(i => `<div class="inv">${avatarHtml(i.avatar, '', 30)}<span class="invTx"><b>${esc(i.fromName)}</b> invited you to a match</span>`
     + `<button class="mini go" data-join="${esc(i.code)}">Join</button><button class="mini" data-dismiss="${i.id}" aria-label="Dismiss">✕</button></div>`).join('');
   friendsBadge();
   if (!$('friendsModal').classList.contains('hide')) renderFriends();
@@ -1477,8 +1901,8 @@ function renderWatch() {
     const now = Date.now();
     watchDeadline = Math.min(now + w.phaseMs, Math.max(now, w.deadline.toDate().getTime()));
   }
-  $('wAvA').innerHTML = avatarHtml(w.aName, w.aAvatar, '', 'sm');
-  $('wAvB').innerHTML = avatarHtml(w.bName, w.bAvatar, '', 'sm');
+  $('wAvA').innerHTML = avatarHtml(w.aAvatar, '', 36);
+  $('wAvB').innerHTML = avatarHtml(w.bAvatar, '', 36);
   $('wNameA').innerHTML = tierBadge(tierOf(w.aRating), 'xs') + esc(w.aName);
   $('wNameB').innerHTML = (w.bIsBot ? '' : tierBadge(tierOf(w.bRating), 'xs')) + esc(w.bName);
   $('wScoreA').textContent = w.aScore; $('wScoreB').textContent = w.bScore;
@@ -1489,7 +1913,7 @@ function renderWatch() {
     const n = i + 1, r = byRound[n];
     return `<i class="${r === 'win' ? 'w' : r === 'loss' ? 'l' : r === 'draw' ? 'd' : n === w.round && !w.over ? 'now' : ''}"><b>${n}</b></i>`;
   }).join('');
-  const backs = (n: number) => Array.from({ length: n }, () => `<span class="ob">${BACK}</span>`).join('');
+  const backs = (n: number) => Array.from({ length: n }, () => `<span class="ob">${backHtml('classic')}</span>`).join('');
   $('wBacksA').innerHTML = backs(w.aCards); $('wBacksB').innerHTML = backs(w.bCards);
   $('wSlotA').dataset.skin = w.aSkin || 'classic'; $('wSlotB').dataset.skin = w.bSkin || 'classic';
   const res = w.revealResult;
@@ -1497,7 +1921,7 @@ function renderWatch() {
     const el = $(id);
     const kind = k >= 0 ? KINDS[k] : null;
     el.className = 'slot' + (w.revealShown ? (kind ? ' face' : ' miss') : locked ? ' down' : ' empty thinking') + (win ? ' win' : lose ? ' lose' : '');
-    const html = w.revealShown ? (kind ? face(kind) : '<span class="slow">Too<br>slow</span>') : locked ? BACK : '<span class="dots3"><i></i><i></i><i></i></span>';
+    const html = w.revealShown ? (kind ? face(kind) : '<span class="slow">Too<br>slow</span>') : locked ? backHtml('classic') : '<span class="dots3"><i></i><i></i><i></i></span>';
     if (el.dataset.c !== html) { el.innerHTML = html; el.dataset.c = html; }
   };
   slot('wSlotA', w.revealA, w.aLocked, res === 'win', res === 'loss');
@@ -1533,10 +1957,16 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (document.body.classList.contains('logOpen')) { showLog(false); return; }
     if (open && open.id !== 'over') { open.classList.add('hide'); return; }
-    if (G && showing('scrGame')) askExit();
+    if (G && !G.ended && showing('scrGame')) { openSheet('settingsSheet'); settingsPage('setMain'); }
+    return;
+  }
+  if ((e.key === 'f' || e.key === 'F') && !open) {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else document.documentElement.requestFullscreen?.().catch(() => {});
     return;
   }
   if (!G || !showing('scrGame') || open) return;
+  if (e.key === 't' || e.key === 'T') { showChat(!chatOpen()); e.preventDefault(); return; }
   if (/^[0-9]$/.test(e.key) && G.phase === 'pick') {
     const i = (Number(e.key) + 9) % 10;
     const c = localHand[i];
@@ -1574,6 +2004,34 @@ $('iosInstallOk').onclick = () => $('iosInstall').classList.add('hide');
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
 }
+
+// ---------- browser details ----------
+// leaving the page mid-match asks first
+addEventListener('beforeunload', e => { if (G && !G.ended && showing('scrGame')) { e.preventDefault(); e.returnValue = ''; } });
+// the tab title flashes when it's your turn and you're in another tab
+const TITLE = document.title;
+let titleTimer: any = 0;
+function flashTitle() {
+  if (!document.hidden || titleTimer) return;
+  let on = false;
+  titleTimer = setInterval(() => { on = !on; document.title = on ? 'Your turn! · RPS 10' : TITLE; }, 900);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearInterval(titleTimer); titleTimer = 0; document.title = TITLE; } });
+// a new version: offered in the lobby, never mid-match
+let newVersion = false;
+async function checkVersion() {
+  try {
+    const r = await fetch('./version.json', { cache: 'no-store' });
+    const v = (await r.json()).v;
+    if (v && v !== VERSION && !newVersion) { newVersion = true; renderUpdate(); }
+  } catch {}
+}
+function renderUpdate() {
+  const bar = $('updateBar');
+  bar.classList.toggle('hide', !newVersion);
+}
+$('updateBar').addEventListener('click', () => location.reload());
+if (import.meta.env.PROD) { setInterval(checkVersion, 5 * 60 * 1000); addEventListener('focus', checkVersion); }
 
 // ---------- boot ----------
 (async () => {

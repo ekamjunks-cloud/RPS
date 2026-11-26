@@ -533,14 +533,14 @@ describe('chat', () => {
     return { ...s, a, b, c, chat };
   };
 
-  it('delivers emoji and phrases to both players, and only to them', () => {
+  it('delivers reactions and phrases to both players, and only to them', () => {
     const { a, b, c, chat } = room();
-    a.call(mod.sendChat, { kind: 'phrase', body: 'Gift for you 🎁' });
-    b.call(mod.sendChat, { kind: 'emoji', body: '✂️' });
-    expect(chat(a).map(m => [m.mine, m.kind, m.body])).toEqual([[true, 'phrase', 'Gift for you 🎁'], [false, 'emoji', '✂️']]);
-    expect(chat(b).map(m => [m.mine, m.body])).toEqual([[false, 'Gift for you 🎁'], [true, '✂️']]);
+    a.call(mod.sendChat, { kind: 'phrase', body: 'Good luck!' });
+    b.call(mod.sendChat, { kind: 'emoji', body: 'lol' });
+    expect(chat(a).map(m => [m.mine, m.kind, m.body])).toEqual([[true, 'phrase', 'Good luck!'], [false, 'emoji', 'lol']]);
+    expect(chat(b).map(m => [m.mine, m.body])).toEqual([[false, 'Good luck!'], [true, 'lol']]);
     expect(chat(c)).toEqual([]);
-    expect(() => c.call(mod.sendChat, { kind: 'emoji', body: '👍' })).toThrow('not in a match');
+    expect(() => c.call(mod.sendChat, { kind: 'emoji', body: 'nice' })).toThrow('not in a match');
   });
 
   it('refuses anything typed, and anything not on the lists', () => {
@@ -548,19 +548,22 @@ describe('chat', () => {
     expect(() => a.call(mod.sendChat, { kind: 'text', body: 'hello' })).toThrow('Unknown message type');
     expect(() => a.call(mod.sendChat, { kind: 'phrase', body: 'you are bad' })).toThrow('Pick one of the phrases');
     expect(() => a.call(mod.sendChat, { kind: 'phrase', body: 'good luck!' })).toThrow('Pick one of the phrases');
-    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: '💩' })).toThrow('Unknown emoji');
+    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: '💩' })).toThrow('Unknown reaction');
+    // packs you haven't unlocked can't be used
+    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: 'king' })).toThrow('Unlock that chat pack');
+    expect(() => a.call(mod.sendChat, { kind: 'phrase', body: 'Too easy' })).toThrow('Unlock that chat pack');
     expect(chat(a)).toEqual([]);
-    for (const e of ['🪨', '📄', '✂️', '🎁']) a.call(mod.sendChat, { kind: 'emoji', body: e });
-    expect(chat(a).map(m => m.body)).toEqual(['🪨', '📄', '✂️', '🎁']);
+    for (const e of ['nice', 'lol', 'whoa', 'grr']) a.call(mod.sendChat, { kind: 'emoji', body: e });
+    expect(chat(a).map(m => m.body)).toEqual(['nice', 'lol', 'whoa', 'grr']);
   });
 
   it('slows down a player who sends too fast', () => {
     const { a, b, test } = room();
-    for (let i = 0; i < 4; i++) a.call(mod.sendChat, { kind: 'emoji', body: '🔥' });
-    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: '🔥' })).toThrow('Slow down');
-    b.call(mod.sendChat, { kind: 'emoji', body: '👍' }); // the other player isn't affected
+    for (let i = 0; i < 4; i++) a.call(mod.sendChat, { kind: 'emoji', body: 'whoa' });
+    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: 'whoa' })).toThrow('Slow down');
+    b.call(mod.sendChat, { kind: 'emoji', body: 'nice' }); // the other player isn't affected
     test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + 5_000_000n));
-    a.call(mod.sendChat, { kind: 'phrase', body: 'I promise 🤞' });
+    a.call(mod.sendChat, { kind: 'phrase', body: 'Nice one!' });
   });
 
   it('keeps chat on the end screen, and removes it with the game', () => {
@@ -576,7 +579,7 @@ describe('chat', () => {
     const { client, playOut, test } = setup();
     const a = client('a');
     a.call(mod.startPractice);
-    a.call(mod.sendChat, { kind: 'phrase', body: 'Rock is coming 🪨' });
+    a.call(mod.sendChat, { kind: 'phrase', body: 'gg' });
     playOut([a]);
     const msgs = (mod.myChat as any)(test.viewContext(a.auth)) as any[];
     expect(msgs.some(m => !m.mine)).toBe(true); // the bot said something over a whole match
@@ -716,21 +719,38 @@ describe('seasons', () => {
 });
 
 describe('looks', () => {
-  it('lets a player pick an avatar, and keeps locked frames and card styles locked', () => {
-    const { test, client } = setup();
+  it('starts everyone as Rocky with the free items, and shows the opponent your look', () => {
+    const { client } = setup();
     const a = client('a'), b = client('b');
-    a.call(mod.setLook, { avatar: '🦊', frame: '', skin: 'classic' });
-    expect(a.me()).toMatchObject({ avatar: '🦊', frame: '', skin: 'classic' });
-    expect(() => a.call(mod.setLook, { avatar: 'hello', frame: '', skin: 'classic' })).toThrow('Pick one of the avatars');
-    expect(() => a.call(mod.setLook, { avatar: '🦊', frame: 'gold', skin: 'classic' })).toThrow('frame is still locked');
-    expect(() => a.call(mod.setLook, { avatar: '🦊', frame: '', skin: 'neon' })).toThrow('unlocks at level 5');
-    expect(() => a.call(mod.setLook, { avatar: '🦊', frame: 'nope', skin: 'classic' })).toThrow('Unknown frame');
-    // the opponent sees it
+    expect(a.me()).toMatchObject({ avatar: 'rocky', frame: '', skin: 'classic', back: 'classic', color: 'green', fx: 'confetti', title: '' });
+    a.call(mod.equip, { kind: 'avatar', key: 'snip' });
+    expect(a.me().avatar).toBe('snip');
+    expect(() => a.call(mod.equip, { kind: 'avatar', key: 'hello' })).toThrow('Unknown item');
+    expect(() => a.call(mod.equip, { kind: 'aura', key: 'gold' })).toThrow('Unlock that first');
+    expect(() => a.call(mod.equip, { kind: 'skin', key: 'neon' })).toThrow('Unlock that first');
+    expect(() => a.call(mod.equip, { kind: 'title', key: 'legend' })).toThrow('Unlock that first');
     a.call(mod.createRoom);
     b.call(mod.joinRoom, { code: a.me().roomCode });
-    expect(b.game()).toMatchObject({ oppAvatar: '🦊', oppSkin: 'classic' });
-    expect(a.game()).toMatchObject({ oppAvatar: '', oppSkin: 'classic' });
-    void test;
+    expect(b.game()).toMatchObject({ oppAvatar: 'snip', oppSkin: 'classic', oppFx: 'confetti', oppTitle: '' });
+    expect(a.game()).toMatchObject({ oppAvatar: 'rocky' });
+  });
+
+  it('moves old emoji avatars to Rocky and old frames to their new auras', () => {
+    const { test, client } = setup();
+    const a = client('a');
+    test.db.look.insert({ identity: a.me().identity, avatar: '🦊', frame: 'fire', skin: 'classic', back: 'classic', color: 'green', fx: 'confetti', title: '', reactions: 'nice', phrases: 'gg' });
+    expect(a.me()).toMatchObject({ avatar: 'rocky', frame: 'blaze' });
+  });
+
+  it('sets a chat loadout from owned packs only', () => {
+    const { client } = setup();
+    const a = client('a');
+    a.call(mod.setLoadout, { reactions: ['grr', 'nice'], phrases: ['gg'] });
+    expect(a.me()).toMatchObject({ reactions: 'grr,nice', phrases: 'gg' });
+    expect(() => a.call(mod.setLoadout, { reactions: ['king'], phrases: [] })).toThrow('Unlock that reaction');
+    expect(() => a.call(mod.setLoadout, { reactions: [], phrases: ['Too easy'] })).toThrow('Unlock that phrase');
+    expect(() => a.call(mod.setLoadout, { reactions: ['nice', 'nice'], phrases: [] })).toThrow('only be used once');
+    expect(() => a.call(mod.setLoadout, { reactions: ['nice', 'lol', 'whoa', 'grr', 'nice', 'lol', 'whoa'], phrases: [] })).toThrow('Too many');
   });
 });
 
@@ -870,20 +890,22 @@ describe('XP and card style unlocks', () => {
     expect(xpOf(s.test, x) - before).toBe(x.game().xpGain);
   });
 
-  it('unlocks card styles by level', () => {
+  it('unlocks Level-road items by level', () => {
     const { test, client } = setup();
     const a = client('a');
     a.call(mod.startPractice); a.call(mod.forfeit); // creates the stats row
     setXp(test, a, 549);  // just short of level 5
-    expect(() => a.call(mod.setLook, { avatar: '', frame: '', skin: 'neon' })).toThrow('unlocks at level 5');
+    expect(() => a.call(mod.equip, { kind: 'skin', key: 'neon' })).toThrow('Unlock that first');
     setXp(test, a, 550);  // level 5: 100 + 125 + 150 + 175
-    a.call(mod.setLook, { avatar: '', frame: '', skin: 'neon' });
+    a.call(mod.equip, { kind: 'skin', key: 'neon' });
     expect(a.me().skin).toBe('neon');
-    expect(() => a.call(mod.setLook, { avatar: '', frame: '', skin: 'wood' })).toThrow('unlocks at level 10');
-    expect(() => a.call(mod.setLook, { avatar: '', frame: '', skin: 'gold' })).toThrow('unlocks at level 50');
+    expect(() => a.call(mod.equip, { kind: 'skin', key: 'wood' })).toThrow('Unlock that first');
+    const items = (mod.myItems as any)(test.viewContext(a.auth)).map((r: any) => r.item);
+    expect(items).toContain('pack:hype');      // level 4
+    expect(items).not.toContain('aura:ruby');  // level 7
   });
 
-  it('unlocks every card style for the accounts listed in the config', () => {
+  it('gives everything to the accounts listed in the config', () => {
     const { client } = setup();
     const a = client('a'), b = client('b');
     const saved = config.allSkins;
@@ -891,9 +913,208 @@ describe('XP and card style unlocks', () => {
     try {
       expect(a.me().allSkins).toBe(true);
       expect(b.me().allSkins).toBe(false);
-      a.call(mod.setLook, { avatar: '', frame: '', skin: 'gold' });
-      expect(a.me().skin).toBe('gold');
-      expect(() => b.call(mod.setLook, { avatar: '', frame: '', skin: 'gold' })).toThrow('unlocks at level 50');
+      a.call(mod.equip, { kind: 'skin', key: 'gold' });
+      a.call(mod.equip, { kind: 'aura', key: 'diamond' });
+      a.call(mod.equip, { kind: 'title', key: 'legend' });
+      expect(a.me()).toMatchObject({ skin: 'gold', frame: 'diamond', title: 'legend' });
+      expect(() => b.call(mod.equip, { kind: 'skin', key: 'gold' })).toThrow('Unlock that first');
     } finally { config.allSkins = saved; }
+  });
+});
+
+describe('coins and the Store', () => {
+  const coinsOf = (c: any) => c.me().coins;
+
+  it('starts everyone with the 300-coin welcome gift and pays coins for matches', () => {
+    const { client, playOut } = setup();
+    const a = client('a');
+    expect(coinsOf(a)).toBe(300);
+    a.call(mod.startPractice); playOut([a]);
+    const g = a.game();
+    // practice pays half: 10 a win, 5 a draw, 3 a loss; a first win of the day adds 50; level 2 adds 100
+    const base = g.endResult === 'win' ? 10 + 50 : g.endResult === 'draw' ? 5 : 3;
+    expect(g.coinGain).toBeGreaterThanOrEqual(base);
+    expect(coinsOf(a)).toBe(300 + g.coinGain);
+    a.call(mod.leaveGame);
+    a.call(mod.startPractice); a.call(mod.forfeit);
+    expect(a.game().coinGain).toBe(0); // quitting pays nothing
+  });
+
+  it('pays the first win of the day once, and level-up coins', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a');
+    // play until a win
+    for (let i = 0; i < 20; i++) {
+      a.call(mod.startPractice); playOut([a]);
+      if (a.game().endResult === 'win') break;
+      a.call(mod.leaveGame);
+    }
+    expect(a.game().endResult).toBe('win');
+    const w = test.db.wallet.identity.find(a.me().identity)!;
+    expect(w.firstWinDay).toBeGreaterThan(0);
+    // level-ups pay 100, and 300 on every fifth level
+    a.call(mod.leaveGame);
+    const row = test.db.stats.identity.find(a.me().identity)!;
+    test.db.stats.identity.update({ ...row, xp: 545 }); // level 4, 5 XP short of level 5
+    const before = coinsOf(a);
+    a.call(mod.startPractice); playOut([a]);
+    const g = a.game();
+    const matchCoins = g.endResult === 'win' ? 10 : g.endResult === 'draw' ? 5 : 3;
+    expect(g.coinGain - matchCoins).toBeGreaterThanOrEqual(300); // reached level 5
+    expect(coinsOf(a) - before).toBe(g.coinGain);
+  });
+
+  it('pays coins for achievements: 100, or 250 for the big ones', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a');
+    const wallet = () => test.db.wallet.identity.find(a.me().identity)?.coins ?? 300;
+    a.call(mod.startPractice); playOut([a]);
+    const got = ((mod.myAchievements as any)(test.viewContext(a.auth)) as any[]).map(x => x.key);
+    expect(wallet()).toBe(300 + a.game().coinGain);
+    if (got.includes('first_win')) expect(a.game().coinGain).toBeGreaterThanOrEqual(100);
+  });
+
+  it('sells items, refuses what you can\'t afford or already own, and takes 20% off the daily deal', () => {
+    const { test, client } = setup();
+    const a = client('a');
+    const info = () => (mod.serverInfo as any)(test.viewContext(a.auth))[0];
+    const items = () => ((mod.myItems as any)(test.viewContext(a.auth)) as any[]).map(r => r.item);
+    expect(() => a.call(mod.buyItem, { item: 'title:legend' })).toThrow("isn't for sale");
+    expect(() => a.call(mod.buyItem, { item: 'skin:classic' })).toThrow("isn't for sale");
+    expect(() => a.call(mod.buyItem, { item: 'skin:gold' })).toThrow('more coins');
+    const cheap = info().dealItem === 'pack:goodsport' ? 'pack:hype' : 'pack:goodsport';
+    a.call(mod.buyItem, { item: cheap });
+    expect(items()).toContain(cheap);
+    expect(a.me().coins).toBe(300 - (cheap === 'pack:hype' ? 250 : 150));
+    expect(() => a.call(mod.buyItem, { item: cheap })).toThrow('already own');
+    // the deal
+    const deal = info();
+    const w = test.db.wallet.identity.find(a.me().identity)!;
+    test.db.wallet.identity.update({ ...w, coins: 100000 });
+    if (!items().includes(deal.dealItem)) {
+      a.call(mod.buyItem, { item: deal.dealItem });
+      expect(a.me().coins).toBe(100000 - deal.dealPrice);
+    }
+    // bought items can be worn
+    if (!items().includes('avatar:ace')) a.call(mod.buyItem, { item: 'avatar:ace' });
+    a.call(mod.equip, { kind: 'avatar', key: 'ace' });
+    expect(a.me().avatar).toBe('ace');
+  });
+});
+
+describe('unranked matches', () => {
+  it('pairs unranked players only with each other: normal XP, no rating change, not on the boards', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b'), c = client('c');
+    for (const [p, n] of [[a, 'anna'], [b, 'bert'], [c, 'cara']] as const) { p.call(mod.claimName, { name: n }); p.qualify(); }
+    a.call(mod.joinCasual);
+    c.call(mod.joinQueue);        // ranked: must not be paired with a
+    expect(a.game()).toBeUndefined();
+    expect(a.me()).toMatchObject({ waiting: 'queue', casual: true });
+    b.call(mod.joinCasual);
+    expect(a.game()).toMatchObject({ mode: 'casual', rated: false });
+    playOut([a, b]);
+    const g = a.game();
+    expect(g.ratingChange).toBe(0);
+    expect(a.me().rating).toBe(1000);
+    expect(g.xpGain).toBe(g.endResult === 'win' ? 30 : g.endResult === 'draw' ? 15 : 10);
+    expect(test.db.weekly.identity.find(a.me().identity)).toBeFalsy();
+    expect(test.db.ladder.identity.find(a.me().identity)).toBeFalsy();
+  });
+});
+
+describe('weekly leaderboard', () => {
+  it('gives 3 points a win and 1 a draw in ranked, and empties every Monday', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.claimName, { name: 'anna' }); b.call(mod.claimName, { name: 'bert' });
+    a.qualify(); b.qualify();
+    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    playOut([a, b]);
+    const r = a.game().endResult;
+    const board = () => (mod.weeklyBoard as any)(test.viewContext(a.auth)) as any[];
+    const rank = (c: any) => (mod.myRank as any)(test.viewContext(c.auth))[0];
+    const expectA = r === 'win' ? 3 : r === 'draw' ? 1 : 0;
+    const expectB = r === 'loss' ? 3 : r === 'draw' ? 1 : 0;
+    expect(rank(a).weekPoints).toBe(expectA);
+    expect(rank(b).weekPoints).toBe(expectB);
+    expect(board()[0].points).toBe(Math.max(expectA, expectB));
+    expect(rank(a).monthRank).toBeGreaterThan(0);
+    // 2026-11-14 is a Saturday: two days later is Monday
+    test.clock.set(Timestamp.fromDate(new Date('2026-11-16T00:00:01Z')));
+    client('z'); // anyone connecting starts the new week
+    expect(board()).toEqual([]);
+  });
+
+  it('shows you and your friends', () => {
+    const { test, client } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.claimName, { name: 'anna' }); b.call(mod.claimName, { name: 'bert' });
+    a.call(mod.addFriend, { name: 'bert' }); b.call(mod.addFriend, { name: 'anna' });
+    const rows = (mod.friendsBoard as any)(test.viewContext(a.auth)) as any[];
+    expect(rows.map(r => [r.name, r.me]).sort()).toEqual([['anna', true], ['bert', false]]);
+  });
+});
+
+describe('account, help and admin', () => {
+  it('deletes an account and everything on it, keeping reports about others', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    playOut([a, b]);
+    a.call(mod.reportPlayer, { reason: 'Other' });
+    expect(() => a.call(mod.deleteAccount, { confirm: 'delete' })).toThrow('Type DELETE');
+    const id = a.me().identity;
+    a.call(mod.deleteAccount, { confirm: 'DELETE' });
+    expect(test.db.player.identity.find(id)).toBeFalsy();
+    expect(test.db.stats.identity.find(id)).toBeFalsy();
+    expect(test.db.wallet.identity.find(id)).toBeFalsy();
+    expect(test.db.report.count()).toBe(1n);
+  });
+
+  it('forfeits a running match when an account is deleted mid-game', () => {
+    const { client } = setup();
+    const a = client('a'), b = client('b');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    a.call(mod.deleteAccount, { confirm: 'DELETE' });
+    expect(b.game()).toMatchObject({ over: true, endResult: 'win', endReason: 'forfeit' });
+  });
+
+  it('takes a few bug reports a day', () => {
+    const { test, client } = setup();
+    const a = client('a');
+    expect(() => a.call(mod.reportBug, { text: 'bad', version: '2', device: 'x' })).toThrow('a little more');
+    for (let i = 0; i < 5; i++) a.call(mod.reportBug, { text: 'The timer froze', version: '2', device: 'iPhone' });
+    expect(() => a.call(mod.reportBug, { text: 'The timer froze', version: '2', device: 'iPhone' })).toThrow('Try again tomorrow');
+    expect(test.db.bug.count()).toBe(5n);
+  });
+
+  it('lets only admins rename, suspend, grant and post notices', () => {
+    const { test, client } = setup();
+    const a = client('a'), b = client('b');
+    b.call(mod.claimName, { name: 'badname' });
+    expect(() => b.call(mod.adminBan, { name: 'badname', banned: true })).toThrow('Admins only');
+    expect((mod.adminReports as any)(test.viewContext(b.auth))).toEqual([]);
+    const saved = config.admins;
+    config.admins = [a.me().identity.toHexString().replace(/^0x/, '').toLowerCase()];
+    try {
+      expect(a.me().isAdmin).toBe(true);
+      a.call(mod.adminRename, { name: 'badname', newName: 'nicename' });
+      expect(b.me().name).toBe('nicename');
+      a.call(mod.adminGrant, { name: 'nicename', coins: 500, item: 'skin:royal' });
+      expect(b.me().coins).toBe(800);
+      b.call(mod.equip, { kind: 'skin', key: 'royal' });
+      a.call(mod.adminBan, { name: 'nicename', banned: true });
+      expect(b.me().banned).toBe(true);
+      expect(() => b.call(mod.createRoom)).toThrow('suspended');
+      a.call(mod.adminBan, { name: 'nicename', banned: false });
+      a.call(mod.adminNotice, { maintenance: true, message: 'Back at 5pm' });
+      expect((mod.serverInfo as any)(test.viewContext(b.auth))[0]).toMatchObject({ maintenance: true, message: 'Back at 5pm' });
+      expect(() => b.call(mod.createRoom)).toThrow('Back at 5pm');
+      b.call(mod.startPractice); // practice still works during maintenance
+      expect((mod.adminSummary as any)(test.viewContext(a.auth))[0].players).toBe(2);
+    } finally { config.admins = saved; }
   });
 });

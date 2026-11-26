@@ -2,7 +2,7 @@
 // Pages are fetched fresh when online (so new versions show up right away) and come from the cache offline.
 // "no-cache" makes the browser check with the server every time instead of reusing GitHub Pages' 10-minute copy.
 // Built files have unique names per version, so they are cached for good. The game server is never cached.
-const CACHE = 'rps10-v2';
+const CACHE = 'rps10-v3';
 const CORE = ['./', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon.svg'];
 
 self.addEventListener('install', e => {
@@ -27,11 +27,14 @@ self.addEventListener('fetch', e => {
     return; // the game server and sign-in always go straight to the network
   }
   if (req.mode === 'navigate') {
+    // the game itself is saved as './' for offline use; other pages (privacy, terms, admin) under their own address
+    const isGame = /\/(index\.html)?$/.test(url.pathname);
     e.respondWith(fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
-      .then(res => { save('./', res.clone()); return res; })
-      .catch(() => caches.match('./')));
+      .then(res => { save(isGame ? './' : req.url, res.clone()); return res; })
+      .catch(() => caches.match(isGame ? './' : req.url).then(hit => hit || caches.match('./'))));
     return;
   }
+  if (url.pathname.endsWith('/version.json')) return; // always from the network
   if (url.pathname.includes('/assets/')) { e.respondWith(cacheFirst(req)); return; }
   e.respondWith(caches.match(req).then(hit => {
     const net = fetch(req).then(res => { save(req, res.clone()); return res; }).catch(() => hit);

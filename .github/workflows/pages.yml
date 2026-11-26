@@ -1,5 +1,5 @@
 # Builds the game and puts it on GitHub Pages every time code is pushed to main.
-# The Spacetime server is published separately (see README, "Deploy from a phone").
+# The Spacetime server is published separately (see README, "Deploy with GitHub Pages").
 name: Deploy game to GitHub Pages
 on:
   push:

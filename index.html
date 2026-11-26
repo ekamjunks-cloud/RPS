@@ -6,8 +6,19 @@
 <title>RPS 10 — 1v1 rock paper scissors with a 10-card hand</title>
 <meta name="description" content="Rock paper scissors, but you only get 10 cards. Outthink a real opponent in a 2-minute 1v1 match. Free, plays in your browser.">
 <meta name="theme-color" content="#0d0b22">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="RPS 10">
 <meta property="og:title" content="RPS 10">
 <meta property="og:description" content="Rock paper scissors with a 10-card hand. Outthink a real opponent in a 2-minute 1v1 match.">
+<!-- Link previews. VITE_SITE_URL (in .env) is the game's full address ending in "/"; most apps need a full image address. -->
+<meta property="og:image" content="%VITE_SITE_URL%og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="RPS 10: rock, paper and scissors cards. Rock paper scissors, but you only get 10 cards.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="RPS 10">
+<meta name="twitter:description" content="Rock paper scissors with a 10-card hand. Outthink a real opponent in a 2-minute 1v1 match.">
+<meta name="twitter:image" content="%VITE_SITE_URL%og-image.png">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-180.png">
@@ -36,6 +47,8 @@
     </div>
     <div class="loadBar"><i></i></div>
     <div class="muted" id="loadMsg">Connecting…</div>
+    <button class="btn ghost hide" id="loadRetry" type="button">Retry</button>
+    <p class="loadTip" id="loadTip"></p>
   </div>
 </section>
 
@@ -66,83 +79,69 @@
   </div>
 </section>
 
-<!-- HOME -->
+<!-- HOME (the "Arena" lobby) -->
 <section class="screen" id="scrLobby">
-  <div class="wrap home">
-    <header class="topbar">
-      <div class="logo sm">
-        <div class="logoCards"><span class="lc k-rock" data-icon="rock"></span><span class="lc k-paper" data-icon="paper"></span><span class="lc k-scissors" data-icon="scissors"></span></div>
-        <div class="logoText">RPS<b>10</b></div>
-      </div>
-      <div class="topBtns">
-        <button class="iconBtn friendsBtn" id="btnFriends" aria-label="Friends"><span>👥</span><b class="badge" id="friendsBadge"></b></button>
-        <button class="iconBtn sndBtn" aria-label="Sound on or off"></button>
-        <button class="chipBtn" id="btnProfile" aria-label="Account"><span class="av sm" id="chipAv"></span><span>Account</span></button>
+  <div class="lobby">
+    <header class="lbTop">
+      <button class="coinPill" id="btnCoins" type="button" aria-label="Coins: open the Store"><i class="coin"></i><b class="coinN" id="coinN">0</b></button>
+      <div class="lbBtns">
+        <button class="iconBtn" id="btnFriends" type="button" aria-label="Friends"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16.5 13.6c2.6.2 4.5 2 4.5 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><b class="badge" id="friendsBadge"></b></button>
+        <button class="iconBtn" id="btnSettings" type="button" aria-label="Settings"><span data-icon="gear"></span></button>
       </div>
     </header>
 
+    <button class="updateBar hide" id="updateBar" type="button"><b>New version ready</b><span>A new version of RPS 10 is ready</span><span class="go">Refresh</span></button>
+    <div class="noticeBar hide" id="noticeBar"></div>
     <div class="inviteBar hide" id="inviteBar"></div>
+    <div class="guestBar hide" id="guestCard"><span id="guestText"></span><button class="btn light sm" id="btnGoogle" type="button">Continue with Google</button></div>
 
-    <div class="panel hero">
-      <div class="heroTop">
-        <button class="avBtn" id="btnLook" type="button" aria-label="Change avatar and card style"><span class="av" id="meAv"></span><span class="avEdit">✏️</span></button>
-        <div class="heroWho"><div class="meName" id="meName"></div><div class="meTag" id="meTag"></div></div>
-        <div class="meRating"><span class="trophy" data-icon="trophy"></span><span id="meRating"></span><small>rating</small></div>
-      </div>
-      <div class="tierRow" id="tierRow">
-        <span class="tierBadge" id="tierBadge"></span>
-        <div class="tierInfo"><div class="tierName" id="tierName"></div><div class="tierBar"><i id="tierFill"></i></div><small id="tierNext"></small></div>
-      </div>
-      <div class="lvlRow" id="lvlRow">
+    <div class="lbMain">
+      <div class="lbSpacer"></div>
+      <button class="hero" id="btnLook" type="button" aria-label="Your profile: open the Locker">
+        <span id="meAv"></span>
+        <span class="meName" id="meName"></span>
+        <span class="meSub"><span id="tierBadge"></span><span id="meRank"></span><span id="meTitle"></span></span>
+      </button>
+      <button class="pnl lvlCard" id="lvlRow" type="button" aria-label="Level road">
         <span class="lvlNum" id="lvlNum">1</span>
-        <div class="lvlInfo">
-          <div class="lvlTop"><b>Level <span id="lvlN">1</span></b><small id="lvlXp">0 / 100 XP</small></div>
-          <div class="lvlBar"><i id="lvlFill"></i></div>
-          <small id="lvlNext"></small>
-        </div>
+        <span class="lvlInfo"><span class="lvlTop"><b>Level <span id="lvlN">1</span></b><small id="lvlXp">0 / 100 XP</small></span><span class="lvlBar"><i id="lvlFill"></i></span><small class="muted" id="lvlNext"></small></span>
+      </button>
+      <button class="pnl lbCard" id="btnBoard" type="button" aria-label="Leaderboard">
+        <span class="lbTr" data-icon="trophy"></span>
+        <span class="lbTx"><b>Leaderboard</b><small id="boardSub">Top players this week</small></span>
+        <span class="lbStack" id="boardStack"></span><span class="chev">›</span>
+      </button>
+      <div class="lbSpacer"></div>
+      <div class="seg modes" id="modes" role="tablist" aria-label="Match type">
+        <button type="button" data-mode="ranked" role="tab">Ranked</button>
+        <button type="button" data-mode="casual" role="tab">Unranked</button>
+        <button type="button" data-mode="friend" role="tab">Friend</button>
+        <button type="button" data-mode="practice" role="tab">Practice</button>
       </div>
-      <div class="stats">
-        <div><b id="stPlayed">0</b><small>Played</small></div>
-        <div><b id="stWins">0</b><small>Wins</small></div>
-        <div><b id="stRate">—</b><small>Win rate</small></div>
+      <small class="modeHint" id="modeHint"></small>
+      <button class="btn primary play" id="btnQuick" type="button"><span class="playIc" id="quickIc"></span><span id="quickTx">PLAY</span></button>
+      <button class="daily" id="btnDaily" type="button">
+        <span class="dailyIc" data-icon="calendar"></span>
+        <span class="dailyTx"><b>Daily challenge</b><small id="dailySub">+30 coins, +30 more for a win</small></span>
+        <span class="dailyStreak" id="dailyStreak"><b id="dailyN">0</b>-day streak</span>
+      </button>
+      <div class="err" id="lobbyErr"></div>
+      <div class="links">
+        <button class="link" id="btnHow" type="button">How to play</button>
+        <span class="sep">·</span>
+        <button class="link" id="btnInvite" type="button">Invite a friend</button>
+        <span class="sep hide" id="installSep">·</span>
+        <button class="link installBtn hide" id="btnInstall" type="button">Install app</button>
       </div>
-      <button class="heroMore" id="btnStats" type="button"><span>📊 Stats &amp; achievements</span><span class="achCount" id="achCount"></span><span class="chev">›</span></button>
-    </div>
-
-    <div class="panel guest hide" id="guestCard">
-      <div class="muted" id="guestText"></div>
-      <button class="btn light" id="btnGoogle">Continue with Google</button>
-    </div>
-
-    <button class="btn primary play" id="btnQuick">
-      <span class="playIc" id="quickIc"></span>
-      <span class="playTx"><span>Play Online</span><small id="quickSub"></small></span>
-    </button>
-    <button class="panel daily" id="btnDaily" type="button">
-      <span class="dailyIc" aria-hidden="true">📅</span>
-      <span class="dailyTx"><b>Daily challenge</b><small id="dailySub">Same hands for everyone today</small><small class="dailyMeta" id="dailyMeta"></small></span>
-      <span class="dailyStreak" id="dailyStreak" title="Daily streak"><span class="fl">🔥</span><b id="dailyN">0</b></span>
-    </button>
-    <div class="tiles">
-      <button class="tile" id="btnPractice"><span class="tileIc k-rock" data-icon="rock"></span><b>Practice</b><small>Play a bot, unrated</small></button>
-      <button class="tile" id="btnFriend"><span class="tileIc k-paper" data-icon="paper"></span><b>Play a friend</b><small>Private room code</small></button>
-    </div>
-    <div class="err" id="lobbyErr"></div>
-
-    <div class="panel">
-      <h3>Leaderboard <span class="sub" id="seasonLbl">Top 10</span></h3>
-      <div class="champ hide" id="champ"></div>
-      <div id="board"></div>
-    </div>
-
-    <div class="links">
-      <button class="link" id="btnHow">How to play</button>
-      <span class="sep">·</span>
-      <button class="link" id="btnInvite">Invite a friend</button>
-      <span class="sep hide" id="installSep">·</span>
-      <button class="link installBtn hide" id="btnInstall">📲 Install app</button>
     </div>
   </div>
+  <nav class="tabbar" aria-label="Main menu">
+    <button type="button" id="navLocker"><span data-icon="locker"></span>Locker</button>
+    <button type="button" id="navStore"><span data-icon="bag"></span>Store<i class="dot hide" id="storeDot"></i></button>
+    <button type="button" class="home on" id="navPlay"><i><span data-icon="play"></span></i>Play</button>
+    <button type="button" id="navRoad"><span data-icon="flag"></span>Road</button>
+    <button type="button" id="navStats"><span data-icon="stats"></span>Stats</button>
+  </nav>
 </section>
 
 <!-- QUEUE / ROOM WAIT -->
@@ -183,24 +182,21 @@
 <section class="screen" id="scrGame">
   <div class="gameLayout">
     <div class="gameMain">
-      <div class="hud">
-        <div class="side you" id="sideYou">
-          <div class="who"><span class="tag">You</span><span class="nm" id="nameYou">You</span></div>
-          <div class="scoreRow"><span class="pts" id="sYou">0</span></div>
-        </div>
-        <div class="mid"><div class="rl">Round</div><div class="rn" id="round">1</div><div class="ft">of <span id="totalR">10</span></div><div class="watchers hide" id="watchers"></div></div>
+      <div class="gTop">
+        <button class="gBtn" id="btnGameSet" type="button"><span data-icon="gear"></span><span class="gl">Settings</span><kbd class="dk">Esc</kbd></button>
+        <div class="gRound"><small id="roundLbl">ROUND</small><b><span id="round">1</span> / <span id="totalR">10</span></b></div>
+        <button class="gBtn x" id="btnLeave" type="button"><span data-icon="exit"></span><span class="gl">Exit</span></button>
+      </div>
+      <div class="hud" id="hud">
+        <div class="side you" id="sideYou"><span id="avYou"></span><span class="who"><span class="nm" id="nameYou">You</span><span id="ttlYou"></span></span></div>
+        <div class="score"><span class="pts" id="sYou">0</span><i>–</i><span class="pts" id="sOpp">0</span></div>
+        <div class="side opp" id="sideOpp"><span class="who"><span class="nm" id="nameOpp">Opponent</span><span id="ttlOpp"></span></span><span id="avOpp"></span></div>
         <div class="rounds" id="roundStrip" aria-label="Round results"></div>
         <div class="bub you" id="bubYou"></div><div class="bub opp" id="bubOpp"></div>
-        <div class="side opp" id="sideOpp">
-          <div class="who"><span class="nm" id="nameOpp">Opponent</span><span class="tag" id="oppTag">Opp</span></div>
-          <div class="scoreRow"><span class="pts" id="sOpp">0</span></div>
-        </div>
+        <div class="watchers hide" id="watchers"></div>
       </div>
 
-      <div class="oppRow">
-        <div class="oppHand" id="oppHand"></div>
-        <div class="tracker" id="tracker" title="Cards your opponent can still have"></div>
-      </div>
+      <div class="oppRow"><div class="oppHand" id="oppHand"></div><div class="tracker" id="tracker" title="Cards your opponent can still have, worked out from what they have played"></div></div>
 
       <div class="arena" id="arena">
         <div class="slotWrap you"><div class="slot" id="slotYou"></div><div class="lbl" id="lblYou">You</div></div>
@@ -213,24 +209,25 @@
         <div class="msg" id="msg"></div>
         <div class="prep" id="prep">
           <h2>Arrange your hand</h2>
-          <p>Drag cards to reorder. Ready up when you're set.</p>
+          <p>Drag cards to put them in any order. You can't change which cards you got.</p>
           <div class="pt" id="prepT">20</div>
           <div class="st"><span class="chip" id="chipYou">You</span><span class="chip" id="chipOpp">Opp</span></div>
         </div>
       </div>
 
-      <div class="handHead">
-        <span class="hhL">Your hand <em id="handCount"></em></span>
-        <span class="keys">Keys <kbd>1</kbd>–<kbd>0</kbd> pick · <kbd>Enter</kbd> lock in</span>
-        <span class="hhR"><button class="iconBtn sm chatBtn" id="btnChat" aria-label="Chat and emoji"><span id="chatIc"></span><b id="chatBadge"></b></button><button class="exit turnsBtn" id="btnLog" aria-label="Show previous turns">Turns<b id="logBadge"></b></button><button class="iconBtn sm sndBtn" aria-label="Sound on or off"></button><button class="exit" id="btnLeave" aria-label="Exit match">Exit</button></span>
-      </div>
+      <div class="hint" id="hint"></div>
       <div class="hand" id="hand"></div>
-      <button class="btn action" id="readyBtn">Ready</button>
+      <div class="gBar">
+        <button class="gBtn" id="btnChat" type="button" aria-label="Chat"><span id="chatIc"></span><span class="gl">Chat</span><b class="badge" id="chatBadge"></b></button>
+        <button class="gBtn turnsBtn" id="btnLog" type="button" aria-label="Previous turns"><span data-icon="list"></span><span class="gl">Turns</span><b class="badge" id="logBadge"></b></button>
+        <button class="btn action" id="readyBtn" type="button">Ready</button>
+      </div>
     </div>
 
     <aside class="log">
-      <h3><span>Previous turns</span><span id="logCount"></span><button class="logClose" id="logClose" aria-label="Close">✕</button></h3>
+      <h3><span>Turns</span><span id="logCount"></span><button class="logClose" id="logClose" aria-label="Close">✕</button></h3>
       <div id="logBody"></div>
+      <div class="sideChat" id="sideChat"></div>
     </aside>
   </div>
 </section>
@@ -238,33 +235,39 @@
 <div class="net" id="net">Reconnecting…</div>
 <div class="logDim" id="logDim"></div>
 <div class="chatDim" id="chatDim"></div>
-<div class="chatSheet" id="chatSheet" role="dialog" aria-label="Chat">
+<div class="chatSheet" id="chatSheet" role="dialog" aria-label="Quick chat">
   <div class="csHead">
-    <b>Chat</b>
+    <b>Quick chat</b>
     <label class="muteSw"><input type="checkbox" id="chatMute"><span>Mute opponent</span></label>
-    <button class="link sm" id="chatReport" type="button">🚩 Report</button>
+    <button class="link sm" id="chatReport" type="button">Report</button>
     <button class="logClose" id="chatClose" aria-label="Close chat">✕</button>
   </div>
   <div class="csList" id="chatList"></div>
   <div class="csEmoji" id="chatEmoji"></div>
   <div class="csPhrases" id="chatPhrases"></div>
+  <div class="csFoot"><span>One message every 2 seconds</span><button class="link sm" id="chatEdit" type="button">Edit in Locker › Chat</button></div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="achPop" id="achPop" role="status" aria-live="polite"></div>
-<div class="banner" id="banner"><div class="bnIn"><div class="b0" id="bn0"></div><div class="b1" id="bn1"></div><div class="b2">Choose your card</div></div></div>
+<div class="banner" id="banner"><div class="bnIn"><div class="b0" id="bn0"></div><div class="b1" id="bn1"></div><div class="b2" id="bn2">Choose your card</div></div></div>
 
 <div class="overlay hide" id="over">
+  <div class="fxLabel hide" id="fxLabel"></div>
   <div class="modal endModal" id="endModal">
     <div class="endBadge" id="endBadge"></div>
     <h2 id="endTitle"></h2>
     <div class="endScore"><div><b id="endYou">0</b><small id="endNameYou">You</small></div><i>–</i><div><b id="endOpp">0</b><small id="endNameOpp">Opp</small></div></div>
     <div class="endChips" id="endChips"></div>
     <div class="rmNote" id="rmNote"></div>
-    <button class="btn primary" id="btnRematch">Rematch</button>
-    <button class="btn ghost" id="btnAgain">New opponent</button>
-    <button class="btn ghost shareBtn" id="btnShareResult">📸 Share result</button>
-    <button class="btn ghost hide" id="btnAddFriend">➕ Add friend</button>
-    <div class="endLinks"><button class="link" id="endChat">💬 Chat</button><button class="link hide" id="btnReport">🚩 Report</button><button class="link" id="btnBack">Back to lobby</button></div>
+    <button class="btn primary" id="btnRematch" type="button">Rematch</button>
+    <button class="btn ghost" id="btnShareResult" type="button">Share result</button>
+    <div class="endLinks">
+      <button class="link" id="btnAgain" type="button">New opponent</button>
+      <button class="link hide" id="btnAddFriend" type="button">Add friend</button>
+      <button class="link" id="endChat" type="button">Chat</button>
+      <button class="link hide" id="btnReport" type="button">Report</button>
+      <button class="link" id="btnBack" type="button">Back to lobby</button>
+    </div>
   </div>
 </div>
 
@@ -293,10 +296,11 @@
 
 <div class="overlay hide" id="confirmLeave">
   <div class="modal">
-    <h2>Exit this match?</h2>
-    <p class="muted" id="leaveNote">It will count as a loss.</p>
-    <button class="btn danger" id="btnLeaveYes">Exit to main screen</button>
-    <button class="btn ghost" id="btnLeaveNo">Keep playing</button>
+    <h2>Leave this match?</h2>
+    <p class="muted" id="leaveScore"></p>
+    <p class="leaveNote" id="leaveNote">It will count as a loss.</p>
+    <button class="btn primary" id="btnLeaveNo" type="button">Keep playing</button>
+    <button class="btn danger" id="btnLeaveYes" type="button">Leave match</button>
   </div>
 </div>
 
@@ -315,35 +319,102 @@
   </div>
 </div>
 
-<div class="overlay hide" id="statsModal">
-  <div class="modal statsModal">
-    <button class="logClose stClose" id="statsClose" aria-label="Close">✕</button>
-    <h2>Your stats</h2>
-    <div class="stGrid" id="stGrid"></div>
-    <h4>Win rate by card</h4>
-    <div class="cardRates" id="cardRates"></div>
-    <h4>Achievements <span class="sub" id="achSub"></span></h4>
-    <div class="achGrid" id="achGrid"></div>
-    <h4>Recent matches</h4>
-    <div class="hist" id="histList"></div>
-    <button class="btn ghost doneBtn" id="statsDone" type="button">Close</button>
+<div class="overlay hide sheetOv" id="lockerSheet">
+  <div class="sheet" role="dialog" aria-label="Locker">
+    <div class="shHead"><h2>Locker</h2><span class="coinPill sm"><i class="coin"></i><b class="coinN">0</b></span><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shTop" id="lockerSheetTop"></div><div class="shTabs" role="tablist"><button type="button" data-tab="cards" role="tab">Cards</button><button type="button" data-tab="chat" role="tab">Chat</button><button type="button" data-tab="profile" role="tab">Profile</button></div>
+    <div class="shBody" id="lockerSheetBody"></div>
   </div>
 </div>
-
-<div class="overlay hide" id="lookModal">
-  <div class="modal lookModal">
-    <button class="logClose stClose" id="lookClose" aria-label="Close">✕</button>
-    <h2>Your look</h2>
-    <div class="lookPreview" id="lookPreview"></div>
-    <h4>Avatar</h4>
-    <div class="avGrid" id="avGrid"></div>
-    <h4>Frame</h4>
-    <div class="frGrid" id="frGrid"></div>
-    <h4>Card style <span class="sub">Your opponent sees it too</span></h4>
-    <div class="skGrid" id="skGrid"></div>
-    <div class="err" id="lookErr"></div>
-    <button class="btn primary doneBtn" id="lookDone" type="button">Done</button>
+<div class="overlay hide sheetOv" id="storeSheet">
+  <div class="sheet" role="dialog" aria-label="Store">
+    <div class="shHead"><h2>Store</h2><span class="coinPill sm"><i class="coin"></i><b class="coinN">0</b></span><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shTabs" role="tablist"><button type="button" data-tab="skin" role="tab">Cards</button><button type="button" data-tab="pack" role="tab">Chat</button><button type="button" data-tab="avatar" role="tab">Avatars</button><button type="button" data-tab="aura" role="tab">Auras</button></div>
+    <div class="shBody" id="storeSheetBody"></div>
   </div>
+</div>
+<div class="overlay hide sheetOv" id="roadSheet">
+  <div class="sheet" role="dialog" aria-label="Level road">
+    <div class="shHead"><h2>Level road</h2><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shTop" id="roadSheetTop"></div>
+    <div class="shBody" id="roadSheetBody"></div>
+  </div>
+</div>
+<div class="overlay hide sheetOv" id="statsSheet">
+  <div class="sheet" role="dialog" aria-label="My stats">
+    <div class="shHead"><h2>My stats</h2><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shTop" id="statsSheetTop"></div><div class="shTabs" role="tablist"><button type="button" data-tab="overview" role="tab">Overview</button><button type="button" data-tab="cards" role="tab">Cards</button><button type="button" data-tab="awards" role="tab">Awards</button><button type="button" data-tab="history" role="tab">History</button></div>
+    <div class="shBody" id="statsSheetBody"></div>
+  </div>
+</div>
+<div class="overlay hide sheetOv" id="boardSheet">
+  <div class="sheet" role="dialog" aria-label="Leaderboard">
+    <div class="shHead"><h2>Leaderboard</h2><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shTop" id="boardSheetTop"></div><div class="shTabs" role="tablist"><button type="button" data-tab="week" role="tab">This week</button><button type="button" data-tab="month" role="tab">This month</button></div>
+    <div class="shBody" id="boardSheetBody"></div>
+  </div>
+</div>
+<div class="overlay hide sheetOv" id="settingsSheet">
+  <div class="sheet" role="dialog" aria-label="Settings">
+    <div class="shHead"><h2 id="setTitle">Settings</h2><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shBody" id="settingsBody">
+      <div class="setPage" id="setMain">
+        <div class="gh">Game</div>
+        <div class="grp">
+          <label class="ri"><span>Sound effects</span><input type="checkbox" class="tg" id="setSound"></label>
+          <label class="ri"><span>Music<small>Light background loop</small></span><input type="checkbox" class="tg" id="setMusic"></label>
+          <label class="ri"><span>Vibration</span><input type="checkbox" class="tg" id="setVibe"></label>
+          <label class="ri"><span>Reduce motion<small>Calmer animations and effects</small></span><input type="checkbox" class="tg" id="setMotion"></label>
+        </div>
+        <div class="gh">Chat</div>
+        <div class="grp">
+          <label class="ri"><span>Opponent's messages<small>Off: you don't see their chat</small></span><input type="checkbox" class="tg" id="setChat"></label>
+        </div>
+        <div class="inMatch hide" id="setMatch">
+          <div class="gh">This match</div>
+          <div class="grp">
+            <button class="ri" type="button" id="setReport"><span>Report opponent</span><span class="chev">›</span></button>
+            <button class="ri red" type="button" id="setLeave"><span>Leave match</span><span class="chev">›</span></button>
+          </div>
+          <p class="setNote">The match keeps going while this is open; your timer still runs.</p>
+        </div>
+        <div class="gh">Account</div>
+        <div class="grp" id="setAccount"></div>
+        <div class="gh">Help</div>
+        <div class="grp">
+          <button class="ri" type="button" id="setHow"><span>How to play</span><span class="chev">›</span></button>
+          <button class="ri" type="button" id="setBug"><span>Report a bug</span><span class="chev">›</span></button>
+          <a class="ri" id="setContact" href="#"><span>Contact us</span><span class="chev">›</span></a>
+        </div>
+        <div class="gh">Legal</div>
+        <div class="grp">
+          <a class="ri" href="./privacy.html" target="_blank" rel="noopener"><span>Privacy policy</span><span class="chev">›</span></a>
+          <a class="ri" href="./terms.html" target="_blank" rel="noopener"><span>Terms of service</span><span class="chev">›</span></a>
+        </div>
+        <p class="ver" id="setVer"></p>
+      </div>
+      <div class="setPage hide" id="setDelete">
+        <p class="warn">This can't be undone. Your account and everything on it is deleted for good.</p>
+        <ul class="lst" id="delList"></ul>
+        <p class="muted">Type <b>DELETE</b> to confirm.</p>
+        <input id="delInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE">
+        <div class="err" id="delErr"></div>
+        <button class="btn danger" id="delGo" type="button" disabled>Delete my account</button>
+        <button class="btn ghost" id="delBack" type="button">Keep my account</button>
+        <p class="muted small">Reports you made about other players are kept, without your name, so moderation still works.</p>
+      </div>
+      <div class="setPage hide" id="setBugPage">
+        <p class="muted">What happened? A sentence or two is plenty. Your game version and device type are sent with it.</p>
+        <textarea id="bugText" maxlength="1000" rows="5" placeholder="e.g. The timer froze in round 4"></textarea>
+        <div class="err" id="bugErr"></div>
+        <button class="btn primary" id="bugGo" type="button">Send</button>
+        <button class="btn ghost" id="bugBack" type="button">Back</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="overlay hide" id="buyModal">
+  <div class="modal buyModal" id="buyBody"></div>
 </div>
 
 <div class="overlay hide" id="friendsModal">
@@ -367,17 +438,6 @@
     <p class="muted" id="reportWho"></p>
     <div class="reasons" id="reportReasons"></div>
     <button class="link" id="reportClose">Cancel</button>
-  </div>
-</div>
-
-<div class="overlay hide" id="acctModal">
-  <div class="modal">
-    <span class="av lg" id="acctAv"></span>
-    <h2 id="acctName"></h2>
-    <p class="muted" id="acctSub"></p>
-    <button class="btn light" id="acctSignIn">Continue with Google</button>
-    <button class="btn ghost" id="acctSignOut">Sign out</button>
-    <button class="link" id="acctClose">Close</button>
   </div>
 </div>
 

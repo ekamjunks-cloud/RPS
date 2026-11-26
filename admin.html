@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>RPS 10 · Admin</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<style>
+:root{color-scheme:dark;--line:rgba(255,255,255,.12);--muted:#a9a3d6;--gold:#ffc83d;--green:#3ee6a0;--red:#ff5a7a}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 'Outfit',system-ui,-apple-system,sans-serif;color:#f5f3ff;background:#0d0b22}
+main{max-width:1100px;margin:0 auto;padding:24px 18px 60px;display:flex;flex-direction:column;gap:18px}
+h1{margin:0;font-size:26px}
+h2{margin:0 0 10px;font-size:17px}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.top .st{color:var(--muted);font-size:14px;flex:1}
+button,input,select{font:inherit;color:inherit}
+button{background:#3a336f;border:1px solid var(--line);border-radius:10px;padding:7px 12px;cursor:pointer;font-weight:700}
+button:hover{filter:brightness(1.15)}
+button.go{background:var(--green);color:#05301f;border:0}
+button.bad{background:rgba(255,90,122,.2);border-color:rgba(255,90,122,.5);color:#ffc2cf}
+input,select{background:#171340;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.box{background:#1b1650;border:1px solid var(--line);border-radius:16px;padding:16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.tile{background:#171340;border-radius:12px;padding:12px}
+.tile b{display:block;font-size:24px}
+.tile small{color:var(--muted);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px;border-top:0}
+td .acts{display:flex;gap:6px;flex-wrap:wrap}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.muted{color:var(--muted)}
+.err{color:var(--red);font-weight:700;min-height:20px}
+.ok{color:var(--green);font-weight:700}
+.empty{color:var(--muted);padding:6px 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:800px){.two{grid-template-columns:1fr}}
+pre{white-space:pre-wrap;margin:0;font:inherit}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>RPS 10 · Admin</h1>
+    <span class="st" id="status">Connecting…</span>
+    <button id="signIn" class="go" type="button">Sign in with Google</button>
+    <a href="./" class="muted">Back to the game</a>
+  </div>
+  <div class="err" id="err"></div>
+  <div id="app" hidden>
+    <div class="box"><h2>Right now</h2><div class="tiles" id="summary"></div></div>
+    <div class="two">
+      <div class="box"><h2>Last 14 days</h2><table id="days"></table></div>
+      <div class="box">
+        <h2>Notice and maintenance</h2>
+        <p class="muted">A message everyone sees in the lobby. With maintenance on, no new online matches start (matches already running finish normally).</p>
+        <div class="row"><input id="noticeMsg" maxlength="200" placeholder="e.g. Back at 5pm" style="flex:1"><label><input type="checkbox" id="noticeMaint"> Maintenance</label><button id="noticeGo" class="go" type="button">Save</button></div>
+        <p class="muted" id="noticeNow"></p>
+        <h2 style="margin-top:16px">Player tools</h2>
+        <div class="row"><input id="who" placeholder="Username" maxlength="16"></div>
+        <div class="row" style="margin-top:8px"><input id="newName" placeholder="New name" maxlength="16"><button id="renameGo" type="button">Rename</button></div>
+        <div class="row" style="margin-top:8px"><button id="banGo" class="bad" type="button">Suspend</button><button id="unbanGo" type="button">Lift suspension</button></div>
+        <div class="row" style="margin-top:8px"><input id="grantCoins" type="number" min="0" max="100000" placeholder="Coins" style="width:110px"><select id="grantItem"><option value="">No item</option></select><button id="grantGo" type="button">Give</button></div>
+        <p class="ok" id="toolOk"></p>
+      </div>
+    </div>
+    <div class="box"><h2>Player reports</h2><table id="reports"></table></div>
+    <div class="box"><h2>Bug reports</h2><table id="bugs"></table></div>
+  </div>
+</main>
+<script type="module" src="/src/admin.ts"></script>
+</body>
+</html>

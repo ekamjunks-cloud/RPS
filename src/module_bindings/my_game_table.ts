@@ -51,4 +51,9 @@ export default __t.row({
   oppFriend: __t.string().name("opp_friend"),
   watchers: __t.u32(),
   xpGain: __t.u32().name("xp_gain"),
+  coinGain: __t.u32().name("coin_gain"),
+  oppBack: __t.string().name("opp_back"),
+  oppColor: __t.string().name("opp_color"),
+  oppFx: __t.string().name("opp_fx"),
+  oppTitle: __t.string().name("opp_title"),
 });

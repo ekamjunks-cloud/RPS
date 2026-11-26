@@ -16,4 +16,5 @@ export default __t.row({
   rating: __t.i32(),
   avatar: __t.string(),
   frame: __t.string(),
+  title: __t.string(),
 });
