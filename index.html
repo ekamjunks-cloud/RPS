@@ -113,27 +113,30 @@
         <span class="lbTx"><b>Leaderboard</b><small id="boardSub">Top players this week</small></span>
         <span class="lbStack" id="boardStack"></span><span class="chev">›</span>
       </button>
-      <div class="lbSpacer"></div>
-      <div class="seg modes" id="modes" role="tablist" aria-label="Match type">
-        <button type="button" data-mode="ranked" role="tab">Ranked</button>
-        <button type="button" data-mode="casual" role="tab">Unranked</button>
-        <button type="button" data-mode="friend" role="tab">Friend</button>
-        <button type="button" data-mode="practice" role="tab">Practice</button>
-      </div>
-      <small class="modeHint" id="modeHint"></small>
-      <button class="btn primary play" id="btnQuick" type="button"><span class="playIc" id="quickIc"></span><span id="quickTx">PLAY</span></button>
       <button class="daily" id="btnDaily" type="button">
         <span class="dailyIc" data-icon="calendar"></span>
         <span class="dailyTx"><b>Daily challenge</b><small id="dailySub">+30 coins, +30 more for a win</small></span>
         <span class="dailyStreak" id="dailyStreak"><b id="dailyN">0</b>-day streak</span>
       </button>
-      <div class="err" id="lobbyErr"></div>
       <div class="links">
         <button class="link" id="btnHow" type="button">How to play</button>
         <span class="sep">·</span>
         <button class="link" id="btnInvite" type="button">Invite a friend</button>
         <span class="sep hide" id="installSep">·</span>
         <button class="link installBtn hide" id="btnInstall" type="button">Install app</button>
+      </div>
+      <div class="lbSpacer"></div>
+      <!-- the match type and Play stay pinned above the bottom bar, so they are always on screen -->
+      <div class="playDock">
+        <div class="seg modes" id="modes" role="tablist" aria-label="Match type">
+          <button type="button" data-mode="ranked" role="tab">Ranked</button>
+          <button type="button" data-mode="casual" role="tab">Unranked</button>
+          <button type="button" data-mode="friend" role="tab">Friend</button>
+          <button type="button" data-mode="practice" role="tab">Practice</button>
+        </div>
+        <small class="modeHint" id="modeHint"></small>
+        <div class="err" id="lobbyErr"></div>
+        <button class="btn primary play" id="btnQuick" type="button"><span class="playIc" id="quickIc"></span><span id="quickTx">PLAY</span></button>
       </div>
     </div>
   </div>
