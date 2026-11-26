@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.4';
+const VERSION = '2.4.1';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = '';
@@ -1125,14 +1125,14 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
     // draw the revealed cards when the reveal starts, or when we join the game partway through it
     if (entering && (phase === 'reveal' || prevPhase !== 'reveal')) {
       const anim = phase === 'reveal';
-      const myBack = (me && me.back) || 'classic';
       const slow = '<span class="slow">Too<br>slow</span>';
       $('lblYou').textContent = r.youAuto ? 'You · auto-played' : 'You';
       $('lblOpp').textContent = r.oppAuto ? `${s.opp.name} · auto-played` : s.opp.name;
       if (anim) {
-        // both cards slam down face down for a second, so both card backs are on show, then flip together
+        // hold for a second: your card stays face up (you know it); the opponent's sits face down,
+        // so each player sees the other's card back, then it flips
         faceDown = k;
-        setSlot('slotYou', r.you ? 'down slam' : 'miss', r.you ? backHtml(myBack) : slow);
+        setSlot('slotYou', r.you ? 'face slam' : 'miss', r.you ? face(r.you) : slow);
         setSlot('slotOpp', r.opp ? 'down slam' : 'miss', r.opp ? backHtml(s.opp.back) : slow);
         sfx.thud(); vibrate(20);
         renderHint(); // no spoilers while the cards are face down
@@ -1141,7 +1141,6 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
           if (!G || faceDown !== k) return;
           faceDown = '';
           const fl = (kind: string, back: string) => `<span class="fl"><span class="flF">${face(kind)}</span><span class="flB">${backHtml(back)}</span></span>`;
-          if (r.you) setSlot('slotYou', 'face flip', fl(r.you, myBack));
           if (r.opp) setSlot('slotOpp', 'face flip', fl(r.opp, s.opp.back));
           sfx.flip();
           renderHint();
