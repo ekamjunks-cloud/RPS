@@ -38,10 +38,22 @@ import AcceptFriendReducer from "./accept_friend_reducer";
 import AddFriendReducer from "./add_friend_reducer";
 import AddOpponentReducer from "./add_opponent_reducer";
 import AdminBanReducer from "./admin_ban_reducer";
+import AdminDeleteAccountReducer from "./admin_delete_account_reducer";
 import AdminDismissReducer from "./admin_dismiss_reducer";
+import AdminEventReducer from "./admin_event_reducer";
+import AdminGiftAllReducer from "./admin_gift_all_reducer";
 import AdminGrantReducer from "./admin_grant_reducer";
+import AdminMuteReducer from "./admin_mute_reducer";
 import AdminNoticeReducer from "./admin_notice_reducer";
+import AdminOpenPlayerReducer from "./admin_open_player_reducer";
 import AdminRenameReducer from "./admin_rename_reducer";
+import AdminResetRatingReducer from "./admin_reset_rating_reducer";
+import AdminSetDealReducer from "./admin_set_deal_reducer";
+import AdminSetRoleReducer from "./admin_set_role_reducer";
+import AdminSuspendReducer from "./admin_suspend_reducer";
+import AdminTakeCoinsReducer from "./admin_take_coins_reducer";
+import AdminTakeItemReducer from "./admin_take_item_reducer";
+import AdminWatchReducer from "./admin_watch_reducer";
 import BuyItemReducer from "./buy_item_reducer";
 import ClaimNameReducer from "./claim_name_reducer";
 import ClaimTransferReducer from "./claim_transfer_reducer";
@@ -79,7 +91,16 @@ import WatchFriendReducer from "./watch_friend_reducer";
 // Import all table schema definitions
 import AdminBugsRow from "./admin_bugs_table";
 import AdminDaysRow from "./admin_days_table";
+import AdminDealsRow from "./admin_deals_table";
+import AdminHoursRow from "./admin_hours_table";
+import AdminLiveRow from "./admin_live_table";
+import AdminLogViewRow from "./admin_log_view_table";
+import AdminPlayersRow from "./admin_players_table";
+import AdminProfileRow from "./admin_profile_table";
 import AdminReportsRow from "./admin_reports_table";
+import AdminRetentionRow from "./admin_retention_table";
+import AdminSalesRow from "./admin_sales_table";
+import AdminStaffRow from "./admin_staff_table";
 import AdminSummaryRow from "./admin_summary_table";
 import DailyStatsRow from "./daily_stats_table";
 import FriendsBoardRow from "./friends_board_table";
@@ -121,6 +142,48 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, AdminDaysRow),
+  adminDeals: __table({
+    name: 'admin_deals',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminDealsRow),
+  adminHours: __table({
+    name: 'admin_hours',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminHoursRow),
+  adminLive: __table({
+    name: 'admin_live',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminLiveRow),
+  adminLogView: __table({
+    name: 'admin_log_view',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminLogViewRow),
+  adminPlayers: __table({
+    name: 'admin_players',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminPlayersRow),
+  adminProfile: __table({
+    name: 'admin_profile',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminProfileRow),
   adminReports: __table({
     name: 'admin_reports',
     indexes: [
@@ -128,6 +191,27 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, AdminReportsRow),
+  adminRetention: __table({
+    name: 'admin_retention',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminRetentionRow),
+  adminSales: __table({
+    name: 'admin_sales',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminSalesRow),
+  adminStaff: __table({
+    name: 'admin_staff',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, AdminStaffRow),
   adminSummary: __table({
     name: 'admin_summary',
     indexes: [
@@ -290,10 +374,22 @@ const reducersSchema = __reducers(
   __reducerSchema("add_friend", AddFriendReducer),
   __reducerSchema("add_opponent", AddOpponentReducer),
   __reducerSchema("admin_ban", AdminBanReducer),
+  __reducerSchema("admin_delete_account", AdminDeleteAccountReducer),
   __reducerSchema("admin_dismiss", AdminDismissReducer),
+  __reducerSchema("admin_event", AdminEventReducer),
+  __reducerSchema("admin_gift_all", AdminGiftAllReducer),
   __reducerSchema("admin_grant", AdminGrantReducer),
+  __reducerSchema("admin_mute", AdminMuteReducer),
   __reducerSchema("admin_notice", AdminNoticeReducer),
+  __reducerSchema("admin_open_player", AdminOpenPlayerReducer),
   __reducerSchema("admin_rename", AdminRenameReducer),
+  __reducerSchema("admin_reset_rating", AdminResetRatingReducer),
+  __reducerSchema("admin_set_deal", AdminSetDealReducer),
+  __reducerSchema("admin_set_role", AdminSetRoleReducer),
+  __reducerSchema("admin_suspend", AdminSuspendReducer),
+  __reducerSchema("admin_take_coins", AdminTakeCoinsReducer),
+  __reducerSchema("admin_take_item", AdminTakeItemReducer),
+  __reducerSchema("admin_watch", AdminWatchReducer),
   __reducerSchema("buy_item", BuyItemReducer),
   __reducerSchema("claim_name", ClaimNameReducer),
   __reducerSchema("claim_transfer", ClaimTransferReducer),

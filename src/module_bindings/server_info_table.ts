@@ -17,4 +17,11 @@ export default __t.row({
   week: __t.u32(),
   dealItem: __t.string().name("deal_item"),
   dealPrice: __t.u32().name("deal_price"),
+  backAt: __t.u64().name("back_at"),
+  noticeEndsAt: __t.u64().name("notice_ends_at"),
+  eventName: __t.string().name("event_name"),
+  eventCoinPct: __t.u32().name("event_coin_pct"),
+  eventXpPct: __t.u32().name("event_xp_pct"),
+  eventStartsAt: __t.u64().name("event_starts_at"),
+  eventEndsAt: __t.u64().name("event_ends_at"),
 });

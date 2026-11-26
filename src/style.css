@@ -961,6 +961,11 @@ button.hero:focus-visible{outline:3px solid var(--gold);outline-offset:4px}
 .btn.sm{width:auto;flex:0 0 auto;padding:8px 12px;font-size:13px}
 .noticeBar{background:rgba(255,200,61,.12);border:1px solid rgba(255,200,61,.45);color:#fff1c9;display:block}
 .noticeBar b{color:var(--gold);margin-right:6px}
+.noticeBar .nbBack{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:rgba(255,200,61,.18);color:var(--gold);font-weight:800}
+.noticeBar.evBar{background:linear-gradient(90deg,rgba(62,230,160,.16),rgba(111,224,255,.12));border-color:rgba(62,230,160,.5);color:#d9fff0}
+.noticeBar.evBar b{color:#3ee6a0}
+.noticeBar.banBar{background:rgba(255,90,110,.13);border-color:rgba(255,90,110,.5);color:#ffe0e4}
+.noticeBar.banBar b{color:#ff6b80}
 .updateBar{all:unset;box-sizing:border-box;cursor:pointer;width:100%;display:flex;gap:10px;align-items:center;margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(62,230,160,.12);border:1px solid rgba(62,230,160,.45);font-size:13px;font-weight:600}
 .updateBar b{color:var(--you)}.updateBar span{flex:1}.updateBar .go{flex:0 0 auto;padding:6px 12px;border-radius:10px;background:var(--you);color:#05301f;font-weight:800}
 .updateBar.hide,.guestBar.hide,.noticeBar.hide{display:none}
@@ -1304,3 +1309,49 @@ body.calm *,body.calm *::before,body.calm *::after{animation-duration:.01ms!impo
 .oppRow .tracker{padding:3px 10px 3px 12px;font-size:11px;gap:8px}
 .oppRow .tracker .tk .mi{width:16px;height:16px;padding:2px}
 .oppRow .tracker .tk b{font-size:13px}
+
+/* ---------- Store: the showroom ---------- */
+#storeSheetBody{padding:0 0 max(16px,env(safe-area-inset-bottom));gap:0}
+.ssStage{flex:0 0 auto;height:clamp(190px,30vh,260px);display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 55%,#3b2f95,#171246 75%);overflow:hidden}
+.ssCards .trio{gap:10px;align-items:flex-end}
+.ssCards .trio .tc{width:clamp(64px,19vw,84px)}
+.ssCards .trio .tc:nth-child(1){transform:rotate(-8deg) translateY(6px)}
+.ssCards .trio .tc:nth-child(3){transform:rotate(8deg) translateY(6px)}
+.ssCards .trio .tc .cnm{display:block}
+.ssStage .ava{filter:drop-shadow(0 10px 24px rgba(0,0,0,.45))}
+.ssPack{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px 12px;padding:0 20px;max-width:340px}
+.ssRx{width:58px;height:58px;display:block}
+.ssRx svg{width:100%;height:100%}
+.ssStrip{display:flex;gap:8px;overflow-x:auto;padding:12px 16px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.ssStrip::-webkit-scrollbar{display:none}
+.ssTh{position:relative;flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:58px;height:66px;padding:4px;border-radius:14px;border:2px solid transparent;background:rgba(8,6,28,.45);cursor:pointer}
+.ssTh .tc{display:block;width:40px;aspect-ratio:5/7}
+.ssTh .tc .cnm{display:none}
+.ssTh.sel{border-color:var(--gold);background:rgba(255,200,61,.12)}
+.ssTh.own:not(.sel){opacity:.6}
+.ssTh .ok{position:absolute;right:-3px;top:-3px;width:17px;height:17px;border-radius:50%;background:var(--you);color:#053020;font-size:10px;font-weight:900;font-style:normal;display:flex;align-items:center;justify-content:center}
+.ssTh .dl{position:absolute;left:50%;top:-7px;transform:translateX(-50%);font-size:9px;font-weight:900;font-style:normal;padding:1px 5px;border-radius:5px;background:var(--opp);color:#fff;white-space:nowrap}
+.ssPk{display:flex;align-items:center;justify-content:center;width:44px;height:44px}
+.ssPk svg{width:100%;height:100%}
+.ssInfo{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:6px 16px 0}
+.ssInfo>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ssName{font-family:var(--display);font-weight:400;font-size:28px;line-height:1.05}
+.ssInfo .muted{font-size:13.5px}
+.ssTag{flex:0 0 auto;font-size:11px;font-weight:900;padding:4px 10px;border-radius:999px;white-space:nowrap;background:rgba(255,255,255,.1);color:var(--muted)}
+.ssTag.lvl{background:rgba(62,230,160,.14);color:#9ff5d0}
+.ssTag.deal{background:rgba(255,90,122,.18);color:#ffc2cf}
+.ssTag.own{background:rgba(62,230,160,.18);color:var(--you)}
+.ssBuy{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 16px 0}
+.ssBuy .btn{height:54px}
+.ssBuy .btn:disabled{filter:none;opacity:.8;font-family:var(--body);font-weight:800;font-size:15px}
+.btn.buyBtn{--c1:#ffd75e;--c2:#ffb21f;--cd:#b06c00;--tx:#3a2100;text-shadow:0 1px 0 rgba(255,255,255,.4)}
+.btn.buyBtn .coin{width:18px;height:18px;margin:0 4px 0 6px}
+.ssBuy small{font-size:12.5px;text-align:center}
+.ssBuy .err:empty{display:none}
+.ssWas{font-size:12px;color:var(--muted);font-weight:700}
+.ssWas s,.ssDeal s{color:var(--dim)}
+.ssDeal{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:16px 16px 0;padding:11px 13px;border-radius:14px;border:1.5px solid rgba(255,200,61,.6);background:rgba(255,200,61,.1);color:var(--text);font:700 13px var(--body);cursor:pointer;text-align:left}
+.ssDeal span{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.ssDeal .coin{width:14px;height:14px}
+#storeSheetBody>p{padding:10px 16px 0}
+.ssAa{font-size:13px;padding:4px 8px}

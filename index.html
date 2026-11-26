@@ -92,6 +92,8 @@
 
     <button class="updateBar hide" id="updateBar" type="button"><b>New version ready</b><span>A new version of RPS 10 is ready</span><span class="go">Refresh</span></button>
     <div class="noticeBar hide" id="noticeBar"></div>
+    <div class="noticeBar evBar hide" id="eventBar"></div>
+    <div class="noticeBar banBar hide" id="banBar"></div>
     <div class="inviteBar hide" id="inviteBar"></div>
     <div class="guestBar hide" id="guestCard"><span id="guestText"></span><button class="btn light sm" id="btnGoogle" type="button">Continue with Google</button></div>
 
@@ -380,6 +382,10 @@
         </div>
         <div class="gh">Account</div>
         <div class="grp" id="setAccount"></div>
+        <div class="hide" id="setTeam">
+          <div class="gh">Team</div>
+          <div class="grp"><a class="ri" href="./admin.html" target="_blank" rel="noopener"><span>Admin dashboard</span><span class="chev">›</span></a></div>
+        </div>
         <div class="gh">Help</div>
         <div class="grp">
           <button class="ri" type="button" id="setHow"><span>How to play</span><span class="chev">›</span></button>
@@ -412,9 +418,6 @@
       </div>
     </div>
   </div>
-</div>
-<div class="overlay hide" id="buyModal">
-  <div class="modal buyModal" id="buyBody"></div>
 </div>
 
 <div class="overlay hide" id="friendsModal">

@@ -1110,11 +1110,120 @@ describe('account, help and admin', () => {
       expect(b.me().banned).toBe(true);
       expect(() => b.call(mod.createRoom)).toThrow('suspended');
       a.call(mod.adminBan, { name: 'nicename', banned: false });
-      a.call(mod.adminNotice, { maintenance: true, message: 'Back at 5pm' });
+      a.call(mod.adminNotice, { maintenance: true, message: 'Back at 5pm', backInMinutes: 30, hideAfterHours: 0 });
       expect((mod.serverInfo as any)(test.viewContext(b.auth))[0]).toMatchObject({ maintenance: true, message: 'Back at 5pm' });
       expect(() => b.call(mod.createRoom)).toThrow('Back at 5pm');
       b.call(mod.startPractice); // practice still works during maintenance
       expect((mod.adminSummary as any)(test.viewContext(a.auth))[0].players).toBe(2);
     } finally { config.admins = saved; }
+  });
+});
+
+describe('admin dashboard tools', () => {
+  const asAdmin = (c: any, fn: () => void) => {
+    const saved = config.admins;
+    config.admins = [c.me().identity.toHexString().replace(/^0x/, '').toLowerCase()];
+    try { fn(); } finally { config.admins = saved; }
+  };
+  const view = (test: any, c: any, v: any) => (v as any)(test.viewContext(c.auth)) as any[];
+
+  it('suspends for a while with a reason, mutes chat, and lifts both', () => {
+    const { test, client } = setup();
+    const a = client('a'), b = client('b'), c = client('c');
+    b.call(mod.claimName, { name: 'bert' });
+    asAdmin(a, () => {
+      a.call(mod.adminSuspend, { name: 'bert', hours: 24, reason: 'offensive name' });
+      expect(() => b.call(mod.createRoom)).toThrow(/suspended for about 24 more hours \(offensive name\)/);
+      test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + 25n * 3600n * 1_000_000n));
+      b.call(mod.createRoom); // the suspension ran out
+      b.call(mod.closeRoom);
+      a.call(mod.adminMute, { name: 'bert', hours: 2 });
+      c.call(mod.createRoom); b.call(mod.joinRoom, { code: c.me().roomCode });
+      expect(() => b.call(mod.sendChat, { kind: 'emoji', body: 'nice' })).toThrow('muted');
+      a.call(mod.adminMute, { name: 'bert', hours: 0 });
+      b.call(mod.sendChat, { kind: 'emoji', body: 'nice' });
+      const log = view(test, a, mod.adminLogView).map(l => l.action);
+      expect(log).toEqual(expect.arrayContaining(['suspend', 'mute chat', 'unmute chat']));
+    });
+  });
+
+  it('lets moderators handle reports and short suspensions, but not coins or events', () => {
+    const { test, client } = setup();
+    const a = client('a'), m = client('m'), b = client('b');
+    m.call(mod.claimName, { name: 'modder' }); b.call(mod.claimName, { name: 'bert' });
+    asAdmin(a, () => a.call(mod.adminSetRole, { name: 'modder', role: 'mod' }));
+    expect(m.me()).toMatchObject({ isMod: true, isAdmin: false });
+    m.call(mod.adminSuspend, { name: 'bert', hours: 48, reason: '' });
+    expect(() => m.call(mod.adminSuspend, { name: 'bert', hours: 500, reason: '' })).toThrow('up to 7 days');
+    expect(() => m.call(mod.adminGrant, { name: 'bert', coins: 10, item: '' })).toThrow('Admins only');
+    expect(() => m.call(mod.adminEvent, { name: 'x', coinPct: 200, xpPct: 100, hours: 1, startInHours: 0 })).toThrow('Admins only');
+    expect(view(test, m, mod.adminPlayers).length).toBe(3);
+    expect(view(test, b, mod.adminPlayers)).toEqual([]);
+  });
+
+  it('opens a full player profile, and gives and takes coins and items', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    b.call(mod.claimName, { name: 'bert' });
+    b.call(mod.startPractice); playOut([b]); b.call(mod.leaveGame);
+    asAdmin(a, () => {
+      a.call(mod.adminOpenPlayer, { name: 'bert' });
+      const before = view(test, a, mod.adminProfile)[0];
+      expect(before.name).toBe('bert');
+      expect(JSON.parse(before.history).length).toBe(1);
+      a.call(mod.adminGrant, { name: 'bert', coins: 1000, item: 'skin:royal' });
+      a.call(mod.adminTakeCoins, { name: 'bert', coins: 500 });
+      expect(view(test, a, mod.adminProfile)[0].coins).toBe(before.coins + 500);
+      expect(view(test, a, mod.adminProfile)[0].bought).toContain('skin:royal');
+      a.call(mod.adminTakeItem, { name: 'bert', item: 'skin:royal' });
+      expect(view(test, a, mod.adminProfile)[0].bought).not.toContain('skin:royal');
+      expect(() => a.call(mod.adminDeleteAccount, { name: 'bert', confirm: 'nope' })).toThrow('Type the username');
+      a.call(mod.adminDeleteAccount, { name: 'bert', confirm: 'bert' });
+      expect(view(test, a, mod.adminPlayers).map(p => p.name)).not.toContain('bert');
+    });
+  });
+
+  it('runs double coins and XP events, and lets the admin pick the deal', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    asAdmin(a, () => {
+      a.call(mod.adminEvent, { name: 'Double weekend', coinPct: 200, xpPct: 200, hours: 48, startInHours: 0 });
+      a.call(mod.adminSetDeal, { daysFromToday: 0, item: 'skin:gold' });
+      expect(() => a.call(mod.adminSetDeal, { daysFromToday: 0, item: 'title:legend' })).toThrow("isn't sold");
+    });
+    const info = (mod.serverInfo as any)(test.viewContext(b.auth))[0];
+    expect(info).toMatchObject({ eventName: 'Double weekend', eventCoinPct: 200, dealItem: 'skin:gold', dealPrice: 20000 });
+    b.call(mod.startPractice); b.call(mod.forfeit); b.call(mod.leaveGame); // creates stats
+    b.call(mod.startPractice); playOut([b]);
+    const g = b.game();
+    expect(g.xpGain).toBe(2 * (g.endResult === 'win' ? 15 : g.endResult === 'draw' ? 8 : 5) - (g.endResult === 'draw' ? 1 : 0));
+  });
+
+  it('counts matches by mode, visits, sales and coins for the charts', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    b.call(mod.startPractice); playOut([b]); b.call(mod.leaveGame);
+    b.call(mod.buyItem, { item: 'pack:goodsport' });
+    asAdmin(a, () => {
+      const day = view(test, a, mod.adminDays)[0];
+      expect(day).toMatchObject({ matches: 1, practice: 1, newPlayers: 2, active: 2, sales: 1 });
+      expect(Number(day.coinsSpent)).toBe(150);
+      expect(Number(day.coinsEarned)).toBeGreaterThan(0);
+      expect(view(test, a, mod.adminSales)[0]).toMatchObject({ item: 'pack:goodsport', sold: 1 });
+      expect(view(test, a, mod.adminRetention)[0]).toMatchObject({ joined: 2 });
+      expect(view(test, a, mod.adminHours)[0].matches).toBe(1);
+      expect(view(test, a, mod.adminSummary)[0]).toMatchObject({ players: 2 });
+    });
+  });
+
+  it('saves the match chat with a report', () => {
+    const { test, client } = setup();
+    const a = client('a'), b = client('b'), x = client('x');
+    a.call(mod.createRoom); b.call(mod.joinRoom, { code: a.me().roomCode });
+    b.call(mod.sendChat, { kind: 'phrase', body: 'gg' });
+    a.call(mod.reportPlayer, { reason: 'Spam in chat' });
+    asAdmin(x, () => {
+      expect(view(test, x, mod.adminReports)[0].chat).toContain(': gg');
+    });
   });
 });

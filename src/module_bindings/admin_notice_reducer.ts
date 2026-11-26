@@ -13,4 +13,6 @@ import {
 export default {
   maintenance: __t.bool(),
   message: __t.string(),
+  backInMinutes: __t.u32(),
+  hideAfterHours: __t.u32(),
 };

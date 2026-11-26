@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.0';
+const VERSION = '2.1';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = '';
@@ -114,12 +114,12 @@ function showError(msg: string) {
   msg = msg.replace(/^.*?Error:\s*/, '');
   if (/fatal|internal|panic|unreachable/i.test(msg)) msg = 'Something went wrong on our side. Nothing was lost. Try again.';
   if (showing('scrAuth')) $('authErr').textContent = msg;
-  else if (isOpen('buyModal')) { const e = $('buyErr'); if (e) e.textContent = msg; else toast(msg, 'bad'); }
+  else if (isOpen('storeSheet') && $('storeErr')) $('storeErr').textContent = msg;
   else if (isOpen('settingsSheet') && !$('setDelete').classList.contains('hide')) $('delErr').textContent = msg;
   else if (isOpen('settingsSheet') && !$('setBugPage').classList.contains('hide')) $('bugErr').textContent = msg;
   else if (isOpen('friendModal')) $('friendErr').textContent = msg;
   else if (isOpen('friendsModal')) $('friendsErr').textContent = msg;
-  else if (showing('scrLobby') && !document.querySelector('.sheetOv:not(.hide)')) $('lobbyErr').textContent = msg;
+  else if (showing('scrLobby') && !document.querySelector('.sheetOv:not(.hide)')) { $('lobbyErr').textContent = msg; $('lobbyErr').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
   else toast(msg, 'bad'); // the error spot isn't on screen: show it anyway
 }
 
@@ -359,7 +359,7 @@ function leaveGameScreen() {
 // ---------- account ----------
 const suggestName = (n: string) => n.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
 function closeModals() {
-  for (const id of ['friendModal', 'confirmLeave', 'friendsModal', 'reportModal', 'buyModal']) $(id).classList.add('hide');
+  for (const id of ['friendModal', 'confirmLeave', 'friendsModal', 'reportModal']) $(id).classList.add('hide');
   document.querySelectorAll('.sheetOv').forEach(el => el.classList.add('hide'));
 }
 
@@ -498,12 +498,42 @@ function renderLevel() {
   const n = nextUnlock(level);
   $('lvlNext').textContent = n ? `Next: ${n.items.map(i => nameOf(i.id) + (i.kind === 'skin' ? ' cards' : '')).join(' + ')} at level ${n.level}` : 'You have finished the Level road!';
 }
-/** Server notices (maintenance) shown at the top of the lobby. */
+/** Server notices (maintenance) shown at the top of the lobby, plus any bonus event. */
+const nowMs = () => Date.now();
+const toMs = (micros: any) => Number(BigInt(micros ?? 0) / 1000n);
+/** A notice with a hide time stops showing (and stops blocking play) once that time has passed. */
+function noticeOn(s: any) { return !!s && (s.maintenance || !!s.message) && (!toMs(s.noticeEndsAt) || toMs(s.noticeEndsAt) > nowMs()); }
+const maintOn = () => { const s = info(); return noticeOn(s) && !!s.maintenance; };
+function leftText(ms: number) {
+  const m = Math.max(1, Math.ceil(ms / 60000));
+  if (m < 60) return `${m} min`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h} hour${h === 1 ? '' : 's'}` : `${Math.round(h / 24)} days`;
+}
 function renderNotice() {
   const s = info();
-  const on = !!s && (s.maintenance || !!s.message);
+  const on = noticeOn(s);
   $('noticeBar').classList.toggle('hide', !on);
-  if (on) $('noticeBar').innerHTML = `<b>${s.maintenance ? 'Maintenance' : 'News'}</b> ${esc(s.message || 'The game is being updated. Online matches are paused for a few minutes.')}`;
+  if (on) {
+    const back = toMs(s.backAt) - nowMs();
+    const backTx = s.maintenance && toMs(s.backAt) ? (back > 0 ? ` <span class="nbBack">Back in about ${leftText(back)}</span>` : ' <span class="nbBack">Back any moment now</span>') : '';
+    $('noticeBar').innerHTML = `<b>${s.maintenance ? 'Maintenance' : 'News'}</b> ${esc(s.message || 'The game is being updated. Online matches are paused for a few minutes.')}${backTx}`;
+  }
+  // your own suspension or chat mute, so it's clear why Play or chat says no
+  const banLeft = me ? toMs(me.banUntil) - nowMs() : 0, muteLeft = me ? toMs(me.mutedUntil) - nowMs() : 0;
+  const banned = !!me && (me.banned || banLeft > 0);
+  $('banBar').classList.toggle('hide', !banned && muteLeft <= 0);
+  if (banned) $('banBar').innerHTML = `<b>Suspended</b> You can't play online ${me.banned ? 'for now' : `for about ${leftText(banLeft)}`}${me.banReason ? ` (${esc(me.banReason)})` : ''}. Practice still works. If you think this is a mistake, contact us from Settings.`;
+  else if (muteLeft > 0) $('banBar').innerHTML = `<b>Chat muted</b> Your chat is off for about ${leftText(muteLeft)}. You can still play.`;
+  const ends = toMs(s?.eventEndsAt), starts = toMs(s?.eventStartsAt);
+  const ev = !!s && !!s.eventName && ends > nowMs();
+  $('eventBar').classList.toggle('hide', !ev);
+  if (ev) {
+    const boosts = [s.eventCoinPct > 100 ? `${s.eventCoinPct / 100}× coins` : '', s.eventXpPct > 100 ? `${s.eventXpPct / 100}× XP` : ''].filter(Boolean).join(' and ');
+    $('eventBar').innerHTML = starts > nowMs()
+      ? `<b>Coming up</b> ${esc(s.eventName)}: ${boosts} from every match. Starts in ${leftText(starts - nowMs())}.`
+      : `<b>${esc(s.eventName)}</b> ${boosts} from every match! Ends in ${leftText(ends - nowMs())}.`;
+  }
 }
 
 // match type: Ranked, Unranked, Friend or Practice, then one big Play
@@ -528,7 +558,7 @@ function renderModes() {
   $('modeHint').textContent = locked ? 'Finish one practice match to unlock online play' : MODE_HINT[mode];
   $('quickIc').innerHTML = PLAY;
   $('quickTx').textContent = mode === 'friend' ? 'PLAY A FRIEND' : mode === 'practice' ? 'PRACTICE' : 'PLAY';
-  const maint = !!info()?.maintenance && (mode === 'ranked' || mode === 'casual' || mode === 'friend');
+  const maint = maintOn() && (mode === 'ranked' || mode === 'casual' || mode === 'friend');
   $('btnQuick').classList.toggle('locked', maint);
 }
 $('modes').addEventListener('click', (e: Event) => {
@@ -591,7 +621,6 @@ function renderSheet(id: string) {
 /** Keeps any open sheet up to date when the server sends something new. */
 function renderSheets() {
   document.querySelectorAll<HTMLElement>('.sheetOv:not(.hide)').forEach(el => renderSheet(el.id));
-  if (isOpen('buyModal') && buyId) renderBuy();
 }
 document.querySelectorAll<HTMLElement>('.sheetOv').forEach(ov => {
   ov.addEventListener('click', (e: Event) => {
@@ -673,7 +702,7 @@ function renderDaily() {
   $('dailySub').textContent = played ? `${res || 'Played'} today · next in ${shortTime(msToNextDay())}`
     : `+${COINS.dailyPlay} coins, +${COINS.dailyWin} more for a win`;
 }
-setInterval(() => { if (me && showing('scrLobby')) { renderDaily(); renderBoard(); } }, 30000);
+setInterval(() => { if (me && showing('scrLobby')) { renderDaily(); renderBoard(); renderNotice(); renderModes(); } }, 30000);
 $('btnDaily').onclick = () => {
   $('lobbyErr').textContent = '';
   if (dailyState().played) { homeMsg(`You've played today's challenge. The next one is in ${shortTime(msToNextDay())}.`); return; }
@@ -1624,62 +1653,99 @@ $('lockerSheet').addEventListener('click', (e: Event) => {
   }
 });
 
-// ---------- Store ----------
+// ---------- Store: a showroom, one item at a time ----------
+// The selected item is shown big (your three cards in that style, your avatar, your avatar in that aura,
+// or the pack's stickers and tickets); a strip underneath switches items; one button buys or equips it.
 const priceOf = (it: { id: string; price?: number }) => (info()?.dealItem === it.id ? info().dealPrice : it.price ?? 0);
 const matchesFor = (n: number) => Math.max(1, Math.ceil(n / 30));
+const storeSel: Record<string, string> = {};
+/** What one Store tab shows: everything for sale, plus anything of that kind you own, cheapest first. */
+function storeItems(kind: ItemKind, mine: Set<string>) {
+  return ITEMS.filter(i => i.kind === kind && (i.price !== undefined || mine.has(i.id)) && !(kind === 'aura' && i.key === ''))
+    .sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+}
+function storePick(kind: ItemKind, mine: Set<string>) {
+  const list = storeItems(kind, mine);
+  const cur = storeSel[kind];
+  if (cur && list.some(i => i.id === cur)) return ITEM.get(cur)!;
+  const deal = info()?.dealItem;
+  const d = list.find(i => i.id === deal && !mine.has(i.id));
+  return d ?? list.find(i => !mine.has(i.id)) ?? list[0]!;
+}
+function storeStage(it: { id: string; kind: ItemKind; key: string }) {
+  switch (it.kind) {
+    case 'skin': return `<span class="ssCards">${skinTrio(it.key)}</span>`;
+    case 'avatar': return avatarHtml(it.key, me.frame, 140);
+    case 'aura': return avatarHtml(me.avatar, it.key, 140);
+    case 'pack': {
+      const rs = reactionsInPack(it.key), ps = phrasesInPack(it.key);
+      return `<span class="ssPack">${rs.map(r => `<span class="ssRx">${reactionSvg(r)}</span>`).join('')}${ps.map(p => ticketHtml(p, me.color)).join('')}</span>`;
+    }
+    default: return itemArt(it.id, 120, me.avatar);
+  }
+}
+function storeThumb(it: { id: string; kind: ItemKind; key: string }) {
+  if (it.kind === 'skin') return `<span class="tc" data-skin="${it.key}">${face('rock')}</span>`;
+  if (it.kind === 'avatar') return avatarHtml(it.key, '', 46);
+  if (it.kind === 'aura') return avatarHtml(me.avatar, it.key, 46);
+  const r = reactionsInPack(it.key)[0];
+  return `<span class="ssPk">${r ? reactionSvg(r) : `<span class="tkt t-${me.color || 'green'} s ssAa">Aa</span>`}</span>`;
+}
 function renderStore() {
   const mine = owned();
-  const tab = sheetTab.storeSheet as ItemKind;
-  const d = info();
-  const deal = d ? ITEM.get(d.dealItem) : undefined;
-  let html = '';
-  if (deal) {
-    html += `<button class="dealCard" type="button" data-buy="${deal.id}"><span class="dealArt">${itemArt(deal.id, 64, me.avatar)}</span><span class="dealTx"><small>DAILY DEAL · ENDS IN ${shortTime(msToNextDay()).toUpperCase()}</small><b>${esc(nameOf(deal.id))}${deal.kind === 'skin' ? ' cards' : ''}</b><span><s>${fmt(deal.price!)}</s> <i class="coin"></i>${fmt(d.dealPrice)}</span></span>${mine.has(deal.id) ? '<span class="ownTag">Owned</span>' : ''}</button>`;
+  const kind = sheetTab.storeSheet as ItemKind;
+  const it = storePick(kind, mine);
+  storeSel[kind] = it.id;
+  const has = mine.has(it.id), price = priceOf(it), lvl = myLevel().level, need = price - coins();
+  const isDeal = info()?.dealItem === it.id && !has;
+  const equipped = has && it.kind !== 'pack' && wearing(it.kind, it.key);
+  const tag = has ? (it.ach ? 'Earned' : 'Owned') : isDeal ? 'Today −20%' : it.level ? `Free at level ${it.level}` : 'Store only';
+  const strip = storeItems(kind, mine).map(x => {
+    const own = mine.has(x.id), deal = info()?.dealItem === x.id && !own;
+    return `<button class="ssTh${x.id === it.id ? ' sel' : ''}${own ? ' own' : ''}" type="button" data-pick="${x.id}" aria-label="${esc(nameOf(x.id))}${own ? ', owned' : ''}">${storeThumb(x)}${own ? '<i class="ok">✓</i>' : ''}${deal ? '<i class="dl">−20%</i>' : ''}</button>`;
+  }).join('');
+  let action = '', note = '';
+  if (has) {
+    action = it.kind === 'pack' ? '<button class="btn primary" type="button" data-act="chat">Set up in Locker › Chat</button>'
+      : equipped ? '<button class="btn" type="button" disabled>Equipped</button>' : '<button class="btn primary" type="button" data-act="equip">Equip</button>';
+    note = it.kind === 'pack' ? 'Yours. Put its reactions and phrases in your quick chat.' : '';
+  } else if (need <= 0) {
+    action = `<button class="btn buyBtn" type="button" data-act="buy">Buy for <i class="coin"></i>${fmt(price)}</button>`;
+    note = `You have ${fmt(coins())} · ${fmt(coins() - price)} left after buying`;
+  } else {
+    action = `<button class="btn" type="button" disabled>Need ${fmt(need)} more coins</button>`;
+    note = `About ${matchesFor(need)} matches of play` + (it.level && lvl < it.level ? ` · or free at level ${it.level} (you're level ${lvl})` : '');
   }
-  const items = ITEMS.filter(i => i.kind === tab && i.price !== undefined).sort((a, b) => a.price! - b.price!);
-  html += `<div class="h4"><span>${tab === 'skin' ? 'Card styles' : tab === 'pack' ? 'Chat packs' : tab === 'avatar' ? 'Avatars' : 'Auras'}</span><span class="gold">Sorted by price</span></div><div class="shopGrid">`
-    + items.map(it => {
-      const has = mine.has(it.id), price = priceOf(it);
-      const tag = it.level ? `Free at level ${it.level}` : 'Store only';
-      return `<button class="shopItem${has ? ' has' : ''}" type="button" data-buy="${it.id}">${itemArt(it.id, 58, me.avatar)}<b>${esc(nameOf(it.id))}</b><small>${tag}</small>`
-        + `<span class="price">${has ? '<span class="ownTag">Owned</span>' : `<i class="coin"></i>${fmt(price)}`}</span></button>`;
-    }).join('') + '</div>';
-  if (tab === 'aura') html += '<p class="muted small ctr">Rookie, Blaze, Sunrise, Gold and Diamond auras are earned, never sold.</p>';
-  html += `<p class="muted small ctr">Coins come from playing: about 30 a match. Things you can't afford show how many coins you still need.</p>`;
-  $('storeSheetBody').innerHTML = html;
+  const d = info(), deal = d ? ITEM.get(d.dealItem) : undefined;
+  $('storeSheetBody').innerHTML =
+    `<div class="ssStage k-${kind}">${storeStage(it)}</div>`
+    + `<div class="ssStrip" role="listbox" aria-label="${esc(KIND_LABEL[kind])}s">${strip}</div>`
+    + `<div class="ssInfo"><div><small class="kindLbl">${KIND_LABEL[kind].toUpperCase()}</small><b class="ssName">${esc(nameOf(it.id))}</b><span class="muted">${esc(descOf(it.id))}</span></div><span class="ssTag${has ? ' own' : isDeal ? ' deal' : it.level ? ' lvl' : ''}">${tag}</span></div>`
+    + `<div class="ssBuy">${isDeal ? `<span class="ssWas">Usually <s>${fmt(it.price!)}</s></span>` : ''}${action}${note ? `<small class="muted">${note}</small>` : ''}<div class="err" id="storeErr"></div></div>`
+    + (deal ? `<button class="ssDeal" type="button" data-deal="${deal.id}"><span>Today's deal: <b>${esc(nameOf(deal.id))}${deal.kind === 'skin' ? ' cards' : ''}</b> <s>${fmt(deal.price!)}</s> <i class="coin"></i>${fmt(d.dealPrice)}</span><span class="muted">ends in ${shortTime(msToNextDay())}</span></button>` : '')
+    + (kind === 'aura' ? '<p class="muted small ctr">Rookie, Blaze, Sunrise, Gold and Diamond auras are earned in matches, never sold.</p>' : '');
+  const sel = $('storeSheetBody').querySelector('.ssTh.sel');
+  if (sel) sel.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
-$('storeSheet').addEventListener('click', (e: Event) => {
-  const b = (e.target as HTMLElement).closest('[data-buy]') as HTMLElement | null;
-  if (b) openBuy(b.dataset.buy!);
-});
-let buyId = '';
-function openBuy(id: string) { buyId = id; renderBuy(); $('buyModal').classList.remove('hide'); }
-function renderBuy() {
-  const it = ITEM.get(buyId); if (!it) return;
-  const has = owned().has(it.id), price = priceOf(it), lvl = myLevel().level, need = price - coins();
-  const preview = it.kind === 'skin' ? skinTrio(it.key) : it.kind === 'pack'
-    ? `<span class="packPrev">${reactionsInPack(it.key).map(r => reactionSvg(r)).join('')}${phrasesInPack(it.key).map(p => ticketHtml(p, me.color, 's')).join('')}</span>`
-    : itemArt(it.id, 96, me.avatar);
-  $('buyBody').innerHTML = `<button class="shX" type="button" data-close aria-label="Close">✕</button>`
-    + `<small class="kindLbl">${KIND_LABEL[it.kind].toUpperCase()}</small><h2>${esc(nameOf(it.id))}</h2><div class="buyPrev">${preview}</div><p class="muted">${esc(descOf(it.id))}</p>`
-    + `<div class="buyRows"><div><span>Price</span><b><i class="coin"></i>${fmt(price)}${price !== it.price ? ` <s>${fmt(it.price!)}</s>` : ''}</b></div><div><span>You have</span><b><i class="coin"></i>${fmt(coins())}</b></div>`
-    + (it.level ? `<div class="free"><span>Free instead at level ${it.level}</span><b>you're level ${lvl}</b></div>` : '') + '</div>'
-    + (has ? '<button class="btn primary" type="button" data-act="equip">Equip now</button>'
-      : need > 0 ? `<button class="btn" type="button" disabled>Need ${fmt(need)} more coins · about ${matchesFor(need)} matches</button>`
-      : `<button class="btn primary" type="button" data-act="buy">Buy for ${fmt(price)}</button>`)
-    + '<div class="err" id="buyErr"></div>';
-}
-$('buyModal').addEventListener('click', async (e: Event) => {
+$('storeSheet').addEventListener('click', async (e: Event) => {
   const t = e.target as HTMLElement;
-  if (t === $('buyModal') || t.closest('[data-close]')) { $('buyModal').classList.add('hide'); return; }
+  const pick = t.closest('[data-pick]') as HTMLElement | null;
+  if (pick) { storeSel[sheetTab.storeSheet!] = pick.dataset.pick!; sfx.select(); renderStore(); return; }
+  const dl = t.closest('[data-deal]') as HTMLElement | null;
+  if (dl) { const it = ITEM.get(dl.dataset.deal!)!; sheetTab.storeSheet = it.kind; storeSel[it.kind] = it.id; renderSheet('storeSheet'); return; }
   const act = (t.closest('[data-act]') as HTMLElement | null)?.dataset.act;
-  const it = ITEM.get(buyId); if (!it || !act) return;
+  const it = ITEM.get(storeSel[sheetTab.storeSheet!] || '');
+  if (!act || !it) return;
   if (act === 'buy') {
-    if (await call('buyItem', { item: it.id })) { sfx.unlock(); burstAt($('buyBody').querySelector('.buyPrev'), ['#ffc83d', '#fff3c4', '#3ee6a0'], 24); vibrate([15, 30, 15]); }
+    const btn = t.closest('button') as HTMLButtonElement; btn.disabled = true;
+    if (await call('buyItem', { item: it.id })) {
+      sfx.unlock(); vibrate([15, 30, 15]);
+      burstAt($('storeSheetBody').querySelector('.ssStage'), ['#ffc83d', '#fff3c4', '#3ee6a0'], 28);
+      toast(`${nameOf(it.id)} is yours!`);
+    } else btn.disabled = false;
   } else if (act === 'equip') {
-    if (it.kind === 'pack') { $('buyModal').classList.add('hide'); openSheet('lockerSheet', 'chat'); return; }
-    if (await call('equip', { kind: it.kind, key: it.key })) { $('buyModal').classList.add('hide'); toast(`${nameOf(it.id)} equipped`); }
-  }
+    if (await call('equip', { kind: it.kind, key: it.key })) toast(`${nameOf(it.id)} equipped`);
+  } else if (act === 'chat') openSheet('lockerSheet', 'chat');
 });
 
 // ---------- Level road ----------
@@ -1770,6 +1836,7 @@ function renderSettings() {
   $('setMatch').classList.toggle('hide', !inMatch);
   $('setReport').classList.toggle('hide', !inMatch || !G || G.opp.isBot);
   renderAccount();
+  $('setTeam').classList.toggle('hide', !(me && (me.isAdmin || me.isMod)));
   $('setVer').textContent = `RPS 10 · version ${VERSION}`;
   $('setContact').href = SUPPORT_EMAIL ? `mailto:${SUPPORT_EMAIL}` : './privacy.html#contact';
 }

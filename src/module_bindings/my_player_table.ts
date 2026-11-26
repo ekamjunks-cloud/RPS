@@ -37,4 +37,8 @@ export default __t.row({
   casual: __t.bool(),
   banned: __t.bool(),
   isAdmin: __t.bool().name("is_admin"),
+  isMod: __t.bool().name("is_mod"),
+  banUntil: __t.u64().name("ban_until"),
+  banReason: __t.string().name("ban_reason"),
+  mutedUntil: __t.u64().name("muted_until"),
 });

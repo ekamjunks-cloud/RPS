@@ -18,4 +18,6 @@ export default __t.row({
   activeToday: __t.u32().name("active_today"),
   banned: __t.u32(),
   coinsInWallets: __t.u64().name("coins_in_wallets"),
+  queued: __t.u32(),
+  liveMatches: __t.u32().name("live_matches"),
 });

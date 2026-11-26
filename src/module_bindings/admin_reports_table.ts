@@ -18,4 +18,5 @@ export default __t.row({
   reason: __t.string(),
   reportsAgainst: __t.u32().name("reports_against"),
   banned: __t.bool(),
+  chat: __t.string(),
 });
