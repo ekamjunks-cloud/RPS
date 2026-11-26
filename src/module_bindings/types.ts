@@ -374,6 +374,10 @@ export const FriendView = __t.object("FriendView", {
   rating: __t.i32(),
   avatar: __t.string(),
   frame: __t.string(),
+  level: __t.u32(),
+  title: __t.string(),
+  lastPlayed: __t.u64(),
+  since: __t.u64(),
 });
 export type FriendView = __Infer<typeof FriendView>;
 
@@ -682,6 +686,9 @@ export const MyRankRow = __t.object("MyRankRow", {
 });
 export type MyRankRow = __Infer<typeof MyRankRow>;
 
+export const MyRecent = __t.object("MyRecent", {});
+export type MyRecent = __Infer<typeof MyRecent>;
+
 export const MyStats = __t.object("MyStats", {});
 export type MyStats = __Infer<typeof MyStats>;
 
@@ -742,6 +749,47 @@ export const Player = __t.object("Player", {
 });
 export type Player = __Infer<typeof Player>;
 
+export const PlayerProfile = __t.object("PlayerProfile", {});
+export type PlayerProfile = __Infer<typeof PlayerProfile>;
+
+export const ProfileFocus = __t.object("ProfileFocus", {
+  identity: __t.identity(),
+  target: __t.identity(),
+});
+export type ProfileFocus = __Infer<typeof ProfileFocus>;
+
+export const ProfileViewRow = __t.object("ProfileViewRow", {
+  name: __t.string(),
+  isGuest: __t.bool(),
+  isMe: __t.bool(),
+  since: __t.u64(),
+  avatar: __t.string(),
+  frame: __t.string(),
+  skin: __t.string(),
+  title: __t.string(),
+  rating: __t.i32(),
+  level: __t.u32(),
+  wins: __t.u32(),
+  losses: __t.u32(),
+  draws: __t.u32(),
+  bestStreak: __t.u32(),
+  perfects: __t.u32(),
+  achievements: __t.string(),
+  favourite: __t.string(),
+  favouritePct: __t.u32(),
+  form: __t.string(),
+  vsWins: __t.u32(),
+  vsLosses: __t.u32(),
+  vsDraws: __t.u32(),
+  vsLast: __t.u64(),
+  vsLastResult: __t.string(),
+  relation: __t.string(),
+  online: __t.bool(),
+  playing: __t.bool(),
+  lastPlayed: __t.u64(),
+});
+export type ProfileViewRow = __Infer<typeof ProfileViewRow>;
+
 export const QueueEntry = __t.object("QueueEntry", {
   identity: __t.identity(),
   rating: __t.i32(),
@@ -757,6 +805,22 @@ export const QueueTimer = __t.object("QueueTimer", {
   attempt: __t.u32(),
 });
 export type QueueTimer = __Infer<typeof QueueTimer>;
+
+export const RecentView = __t.object("RecentView", {
+  name: __t.string(),
+  avatar: __t.string(),
+  frame: __t.string(),
+  rating: __t.i32(),
+  isGuest: __t.bool(),
+  relation: __t.string(),
+  at: __t.u64(),
+  mode: __t.string(),
+  result: __t.string(),
+  you: __t.u32(),
+  them: __t.u32(),
+  reason: __t.string(),
+});
+export type RecentView = __Infer<typeof RecentView>;
 
 export const Report = __t.object("Report", {
   id: __t.u64(),

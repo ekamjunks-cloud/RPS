@@ -19,4 +19,8 @@ export default __t.row({
   rating: __t.i32(),
   avatar: __t.string(),
   frame: __t.string(),
+  level: __t.u32(),
+  title: __t.string(),
+  lastPlayed: __t.u64().name("last_played"),
+  since: __t.u64(),
 });

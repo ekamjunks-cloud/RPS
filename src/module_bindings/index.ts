@@ -84,6 +84,7 @@ import SetLoadoutReducer from "./set_loadout_reducer";
 import StartDailyReducer from "./start_daily_reducer";
 import StartPracticeReducer from "./start_practice_reducer";
 import StopWatchingReducer from "./stop_watching_reducer";
+import ViewProfileReducer from "./view_profile_reducer";
 import WatchFriendReducer from "./watch_friend_reducer";
 
 // Import all procedure arg schemas
@@ -116,8 +117,10 @@ import MyItemsRow from "./my_items_table";
 import MyLogRow from "./my_log_table";
 import MyPlayerRow from "./my_player_table";
 import MyRankRow from "./my_rank_table";
+import MyRecentRow from "./my_recent_table";
 import MyStatsRow from "./my_stats_table";
 import MyTransferRow from "./my_transfer_table";
+import PlayerProfileRow from "./player_profile_table";
 import SeasonInfoRow from "./season_info_table";
 import ServerInfoRow from "./server_info_table";
 import WatchGameRow from "./watch_game_table";
@@ -317,6 +320,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyRankRow),
+  myRecent: __table({
+    name: 'my_recent',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRecentRow),
   myStats: __table({
     name: 'my_stats',
     indexes: [
@@ -331,6 +341,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyTransferRow),
+  playerProfile: __table({
+    name: 'player_profile',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PlayerProfileRow),
   seasonInfo: __table({
     name: 'season_info',
     indexes: [
@@ -420,6 +437,7 @@ const reducersSchema = __reducers(
   __reducerSchema("start_daily", StartDailyReducer),
   __reducerSchema("start_practice", StartPracticeReducer),
   __reducerSchema("stop_watching", StopWatchingReducer),
+  __reducerSchema("view_profile", ViewProfileReducer),
   __reducerSchema("watch_friend", WatchFriendReducer),
 );
 

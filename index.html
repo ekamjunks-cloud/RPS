@@ -192,7 +192,7 @@
       <div class="hud" id="hud">
         <div class="side you" id="sideYou"><span id="avYou"></span><span class="who"><span class="nm" id="nameYou">You</span><span id="ttlYou"></span></span></div>
         <div class="score"><span class="pts" id="sYou">0</span><i>–</i><span class="pts" id="sOpp">0</span></div>
-        <div class="side opp" id="sideOpp"><span class="who"><span class="nm" id="nameOpp">Opponent</span><span id="ttlOpp"></span></span><span id="avOpp"></span></div>
+        <div class="side opp" id="sideOpp" role="button" tabindex="0" aria-label="See your opponent's profile"><span class="who"><span class="nm" id="nameOpp">Opponent</span><span id="ttlOpp"></span></span><span id="avOpp"></span></div>
         <div class="rounds" id="roundStrip" aria-label="Round results"></div>
         <div class="bub you" id="bubYou"></div><div class="bub opp" id="bubOpp"></div>
         <div class="watchers hide" id="watchers"></div>
@@ -258,7 +258,7 @@
   <div class="modal endModal" id="endModal">
     <div class="endBadge" id="endBadge"></div>
     <h2 id="endTitle"></h2>
-    <div class="endScore"><div><b id="endYou">0</b><small id="endNameYou">You</small></div><i>–</i><div><b id="endOpp">0</b><small id="endNameOpp">Opp</small></div></div>
+    <div class="endScore"><div><b id="endYou">0</b><small id="endNameYou">You</small></div><i>–</i><div><b id="endOpp">0</b><button class="linkName" id="endNameOpp" type="button">Opp</button></div></div>
     <div class="endChips" id="endChips"></div>
     <div class="rmNote" id="rmNote"></div>
     <button class="btn primary" id="btnRematch" type="button">Rematch</button>
@@ -420,18 +420,31 @@
   </div>
 </div>
 
-<div class="overlay hide" id="friendsModal">
-  <div class="modal friendsModal">
-    <button class="logClose stClose" id="friendsClose" aria-label="Close">✕</button>
-    <h2>Friends</h2>
-    <form class="row" id="addFriendForm">
-      <input id="addFriendName" placeholder="Add by username" autocomplete="off" autocapitalize="off" maxlength="16">
-      <button class="btn ghost" type="submit">Add</button>
+<div class="overlay hide sheetOv" id="friendsSheet">
+  <div class="sheet" role="dialog" aria-label="Friends">
+    <div class="shHead"><h2>Friends</h2><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shTabs" role="tablist"><button type="button" data-tab="friends" role="tab">Friends</button><button type="button" data-tab="requests" role="tab">Requests<i class="tabBadge" id="reqBadge"></i></button><button type="button" data-tab="recent" role="tab">Played with</button></div>
+    <form class="frAdd" id="addFriendForm">
+      <input id="addFriendName" placeholder="Add by username" aria-label="Add a friend by username" autocomplete="off" autocapitalize="off" maxlength="16">
+      <button class="mini go" type="submit">Add</button>
     </form>
-    <div class="err" id="friendsErr"></div>
-    <div id="friendsList"></div>
-    <p class="muted fHint">Tip: after a match against someone, tap <b>➕ Add friend</b> on the result screen.</p>
-    <button class="btn ghost doneBtn" id="friendsDone" type="button">Close</button>
+    <div class="err frErr" id="friendsErr"></div>
+    <div class="shBody" id="friendsSheetBody"></div>
+  </div>
+</div>
+
+<div class="overlay hide sheetOv" id="profileSheet">
+  <div class="sheet" role="dialog" aria-label="Player profile">
+    <div class="shHead"><button class="shX" id="profBack" type="button" aria-label="Back">‹</button><h2 class="ctrH">Profile</h2><button class="shX" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="shBody" id="profileSheetBody"></div>
+  </div>
+</div>
+
+<!-- tapping your opponent during a match: a short card over the match -->
+<div class="overlay hide pcOv" id="profileCard">
+  <div class="pcard" role="dialog" aria-label="Your opponent">
+    <span class="pcGrab" aria-hidden="true"></span>
+    <div id="profileCardBody"></div>
   </div>
 </div>
 

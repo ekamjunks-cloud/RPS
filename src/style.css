@@ -689,13 +689,10 @@ body.chatOpen .chatSheet{transform:none;visibility:visible;transition:transform 
 .mini:disabled{opacity:.45;cursor:default}
 
 /* ---------- friends sheet, look picker, report ---------- */
-.friendsModal,.lookModal{max-width:440px;text-align:left;position:relative;gap:10px}
-.friendsModal h2,.lookModal h2{text-align:center}
+.lookModal{max-width:440px;text-align:left;position:relative;gap:10px}
+.lookModal h2{text-align:center}
 .lookModal h4{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:800;margin-top:4px;display:flex;justify-content:space-between;gap:8px}
 .lookModal h4 .sub{color:var(--dim);letter-spacing:.5px;text-transform:none;font-weight:600}
-.friendsModal form.row{display:flex;gap:8px}
-.friendsModal form.row .btn{width:auto;padding:10px 16px}
-.friendsModal .err:empty{display:none}
 #friendsList{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto}
 .fr{display:flex;align-items:center;gap:10px;background:rgba(8,6,28,.35);border-radius:12px;padding:8px 10px}
 .fr.in{box-shadow:inset 0 0 0 1px rgba(255,200,61,.4)}
@@ -703,7 +700,6 @@ body.chatOpen .chatSheet{transform:none;visibility:visible;transition:transform 
 .frMid b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .frMid small{font-size:11.5px;color:var(--muted);font-weight:600}
 .fr:not(.on) .frMid small{color:var(--dim)}
-.fHint{font-size:12px;text-align:center}
 .lookPreview{display:flex;align-items:center;justify-content:center;gap:18px;padding:6px 0 4px}
 .lookPreview .av.lg{margin:0;width:68px;height:68px;font-size:30px}
 .lookPreview .av.lg .emo{font-size:38px}
@@ -754,7 +750,7 @@ body.chatOpen .chatSheet{transform:none;visibility:visible;transition:transform 
 .wMsg{min-height:22px;text-align:center;font-weight:700;font-size:15px}
 .wNote{font-size:12px;text-align:center}
 #scrWatch.idle .wBoard,#scrWatch.idle .wArena{opacity:.35}
-.friendsModal .row input{text-align:left;font-family:var(--body);font-size:16px;letter-spacing:0;text-transform:none}
+.lookModal .row input{text-align:left;font-family:var(--body);font-size:16px;letter-spacing:0;text-transform:none}
 /* sheet close buttons: always visible (.logClose alone is phone-only), and stay in reach while scrolling */
 .stClose{display:block;position:sticky;top:0;align-self:flex-end;margin:-12px -8px -34px 0;z-index:2;width:36px;height:36px;border-radius:50%;background:rgba(8,6,28,.6);color:var(--text);font-size:18px}
 .doneBtn{margin-top:4px}
@@ -1355,3 +1351,66 @@ body.calm *,body.calm *::before,body.calm *::after{animation-duration:.01ms!impo
 .ssDeal .coin{width:14px;height:14px}
 #storeSheetBody>p{padding:10px 16px 0}
 .ssAa{font-size:13px;padding:4px 8px}
+
+/* ---------- Friends screen and player profiles ---------- */
+.frAdd{display:flex;gap:8px;padding:12px 16px 0}
+.frAdd input{padding:10px 12px;font-size:15px}
+.frAdd .mini{padding:0 18px}
+.frErr{padding:4px 16px 0}
+.frErr:empty{display:none}
+.shTabs .tabBadge{font-style:normal;display:inline-block;min-width:18px;margin-left:5px;padding:1px 5px;border-radius:9px;background:var(--opp);color:#fff;font-size:11px;font-weight:900;box-sizing:border-box;vertical-align:1px}
+.shTabs .tabBadge:empty{display:none}
+.frList{display:flex;flex-direction:column;gap:6px}
+.frList .fr{cursor:pointer;padding:9px 10px;transition:background .15s}
+.frList .fr:hover{background:rgba(255,255,255,.07)}
+.frMid b{display:flex;align-items:center;gap:4px}
+.frMid b .tb.xs{margin:0 0 0 2px}
+.onTx{color:var(--you)!important;font-weight:700}
+.fr .chev{color:var(--dim);font-size:20px;font-weight:800;padding:0 4px}
+.frTag{font-size:12px;font-weight:800;color:var(--you);padding:0 6px}
+.frTag.dim{color:var(--muted)}
+.res-win{color:var(--you)}.res-loss{color:var(--opp)}.res-draw{color:var(--gold)}
+.shHead .ctrH{text-align:center}
+.btn.gold{--c1:#ffd75e;--c2:#ffb21f;--cd:#b06c00;--tx:#3a2100;text-shadow:0 1px 0 rgba(255,255,255,.4)}
+.pfHead{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:4px 0}
+.pfHead.row{flex-direction:row;text-align:left;gap:14px;padding:0}
+.pfWho{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.pfHead.row .pfWho{align-items:flex-start}
+.pfName{font-family:var(--display);font-weight:400;font-size:30px;line-height:1;overflow-wrap:anywhere}
+.pfHead.row .pfName{font-size:24px}
+.pfWho small{font-size:13px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:center}
+.pfHead.row .pfWho small{justify-content:flex-start}
+.pfWho .pill{font-size:11px;font-weight:800;padding:2px 8px;border-radius:8px;background:rgba(255,255,255,.1);color:var(--text)}
+.pfActs{display:flex;gap:8px;align-items:center}
+.pfActs .btn{flex:1;padding:12px 14px;font-size:17px}
+.pfActs .btn.ghost{font-size:15px}
+.pfTag{flex:0 0 auto;font-size:13px;font-weight:800;color:var(--you);padding:0 4px}
+.stGrid.g4{grid-template-columns:repeat(4,1fr)}
+.stGrid.g4 b{font-size:20px}
+.h2h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-radius:14px;background:rgba(111,224,255,.08);border:1px solid rgba(111,224,255,.3)}
+.h2h b{display:block;font-family:var(--display);font-weight:400;font-size:26px;line-height:1.1}
+.h2h small{display:block;font-size:12px;color:var(--muted);font-weight:700}
+.h2hR{text-align:right}
+.h2h.none{justify-content:center;background:rgba(255,255,255,.04);border-color:var(--line)}
+.pfRow{display:flex;gap:8px}
+.pfMini{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:12px;background:rgba(8,6,28,.35);font-size:12px;color:var(--muted);font-weight:700}
+.pfMini b{display:block;color:var(--text);font-size:14px}
+.pfMini .mi{width:30px;height:30px;flex:0 0 auto}
+.trio.xs .tc{width:18px}
+.pfAwards{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.pfAw{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:20px;border-radius:50%;background:rgba(255,255,255,.04);border:1px solid var(--line);filter:grayscale(1);opacity:.45}
+.pfAw.on{background:rgba(255,200,61,.14);border-color:rgba(255,200,61,.45);filter:none;opacity:1}
+.pfFoot{display:flex;justify-content:center;gap:24px;padding-top:4px}
+.linkBtn{background:none;border:0;font:800 14px var(--body);color:var(--muted);cursor:pointer;padding:8px 4px}
+.linkBtn:hover{color:var(--text)}
+.linkBtn.red{color:#ff8aa5}
+.pcOv{align-items:flex-end;padding:0;z-index:34}
+.pcard{width:100%;max-width:520px;background:linear-gradient(180deg,#2c2574,#1d1850);border-radius:26px 26px 0 0;border-top:1px solid rgba(255,255,255,.14);padding:10px 16px max(18px,env(safe-area-inset-bottom));display:flex;flex-direction:column;animation:sheetIn .3s cubic-bezier(.2,1.2,.4,1)}
+.pcard #profileCardBody{display:flex;flex-direction:column;gap:12px}
+.pcGrab{width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.25);align-self:center;margin-bottom:10px}
+#sideOpp{cursor:pointer}
+#sideOpp:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:12px}
+.linkName{background:none;border:0;padding:0;font:700 12px var(--body);color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;text-decoration:underline;text-decoration-color:rgba(255,255,255,.25);text-underline-offset:3px}
+.linkName:hover{color:var(--text)}
+#boardSheetBody [data-prof]{cursor:pointer}
+@media (min-width:900px){.pcOv{align-items:center;padding:30px}.pcard{border-radius:24px;border:1px solid rgba(255,255,255,.14)}}

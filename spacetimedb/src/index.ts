@@ -409,6 +409,8 @@ const staff = table({ name: 'staff' }, { identity: t.identity().primaryKey(), ro
 
 // Which player each admin has open on the Players page.
 const adminFocus = table({ name: 'admin_focus' }, { identity: t.identity().primaryKey(), target: t.identity() });
+// Whose profile each player has open (the player_profile view reads it).
+const profileFocus = table({ name: 'profile_focus' }, { identity: t.identity().primaryKey(), target: t.identity() });
 
 // A message the admin page can show everyone, e.g. planned maintenance.
 const notice = table(
@@ -469,7 +471,7 @@ const spacetimedb = schema({
   player, game, handCard, roundLog, gameTimer, queueEntry, queueTimer, room, pairStat, ladder, matchResult, rngState, sweepTimer, transfer, chatMsg,
   stats, history, achievement, season, dailyStat, look, friend, invite, report, watcher,
   wallet, owned, weekly, bug, dayCount, notice,
-  hourCount, activity, dealOverride, event, adminLog, staff, adminFocus,
+  hourCount, activity, dealOverride, event, adminLog, staff, adminFocus, profileFocus,
 });
 export default spacetimedb;
 
@@ -1505,6 +1507,15 @@ export const removeFriend = spacetimedb.reducer({ other: t.identity() }, (ctx, {
   for (const i of Array.from(ctx.db.invite.from.filter(other))) if (i.to.isEqual(p.identity)) ctx.db.invite.id.delete(i.id);
 });
 
+/** Opens a player's profile (the player_profile view then shows it). Anyone can see anyone's profile: it holds only game stats. */
+export const viewProfile = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+  const p = me(ctx);
+  const o = ctx.db.player.nameKey.find(name.trim().toLowerCase());
+  if (!o) throw new SenderError('That player is no longer around');
+  const row = { identity: p.identity, target: o.identity };
+  if (ctx.db.profileFocus.identity.find(p.identity)) ctx.db.profileFocus.identity.update(row); else ctx.db.profileFocus.insert(row);
+});
+
 /** Invites a friend into your room (opening one if you aren't in one yet). */
 export const inviteFriend = spacetimedb.reducer({ other: t.identity() }, (ctx, { other }) => {
   let p = me(ctx);
@@ -1887,6 +1898,7 @@ export const sweep = spacetimedb.reducer({ onSchedule: sweepTimer }, { arg: swee
   for (const d of Array.from(ctx.db.dailyStat.iter())) if (d.day + DAILY_STAT_KEEP_DAYS <= today) ctx.db.dailyStat.day.delete(d.day);
   for (const d of Array.from(ctx.db.dayCount.iter())) if (d.day + 90 <= today) ctx.db.dayCount.day.delete(d.day);
   for (const a of Array.from(ctx.db.activity.iter())) if (a.day + 60 <= today) ctx.db.activity.key.delete(a.key);
+  for (const f of Array.from(ctx.db.profileFocus.iter())) if (!ctx.db.player.identity.find(f.identity)) ctx.db.profileFocus.identity.delete(f.identity);
   const hourNow = Number(nowMicros(ctx) / HOUR_MICROS);
   for (const h of Array.from(ctx.db.hourCount.iter())) if (h.hour + 24 * 14 <= hourNow) ctx.db.hourCount.hour.delete(h.hour);
   for (const d of Array.from(ctx.db.dealOverride.iter())) if (d.day < today) ctx.db.dealOverride.day.delete(d.day);
@@ -2259,8 +2271,18 @@ export const dailyStats = spacetimedb.anonymousView({ name: 'daily_stats', publi
 
 const friendViewRow = t.row('FriendView', {
   identity: t.identity(), name: t.string(), state: t.string(), online: t.bool(), playing: t.bool(),
-  rating: t.i32(), avatar: t.string(), frame: t.string(),
+  rating: t.i32(), avatar: t.string(), frame: t.string(), level: t.u32(), title: t.string(),
+  lastPlayed: t.u64(), // microseconds since 1970 of their last finished match (friends only; 0 = none)
+  since: t.u64(),      // when the request was sent or the friendship began
 });
+
+const tsMicros = (x: { microsSinceUnixEpoch: bigint }) => x.microsSinceUnixEpoch;
+/** When this player last finished a match, from their history (0 = never). */
+function lastPlayedOf(ctx: any, who: Identity): bigint {
+  let last = 0n;
+  for (const h of ctx.db.history.identity.filter(who)) if (tsMicros(h.at) > last) last = tsMicros(h.at);
+  return last;
+}
 
 /** Your friends and friend requests, with who is online or mid-match. */
 export const myFriends = spacetimedb.view({ name: 'my_friends', public: true }, t.array(friendViewRow), ctx => {
@@ -2268,14 +2290,97 @@ export const myFriends = spacetimedb.view({ name: 'my_friends', public: true }, 
   for (const f of ctx.db.friend.owner.filter(ctx.sender)) {
     const o = ctx.db.player.identity.find(f.other);
     if (!o) continue;
-    const g = f.state === 'friends' && o.gameId !== 0n ? ctx.db.game.id.find(o.gameId) : undefined;
+    const friends = f.state === 'friends';
+    const g = friends && o.gameId !== 0n ? ctx.db.game.id.find(o.gameId) : undefined;
     const k = lookFields(ctx, o.identity);
     out.push({
-      identity: o.identity, name: o.name, state: f.state, online: f.state === 'friends' && o.conns > 0,
+      identity: o.identity, name: o.name, state: f.state, online: friends && o.conns > 0,
       playing: !!g && !g.over, rating: o.rating, avatar: k.avatar, frame: k.frame,
+      level: levelOf(ctx.db.stats.identity.find(o.identity)?.xp ?? 0).level, title: k.title,
+      lastPlayed: friends ? lastPlayedOf(ctx, o.identity) : 0n, since: tsMicros(f.at),
     });
   }
   return out;
+});
+
+const recentViewRow = t.row('RecentView', {
+  name: t.string(), avatar: t.string(), frame: t.string(), rating: t.i32(), isGuest: t.bool(),
+  relation: t.string(), // '' | 'friends' | 'in' | 'out'
+  at: t.u64(), mode: t.string(), result: t.string(), you: t.u32(), them: t.u32(),
+  reason: t.string(), // 'points' | 'forfeit' | 'disconnect'
+});
+
+/** Real people from your recent matches (no bots), newest first, each once. */
+export const myRecent = spacetimedb.view({ name: 'my_recent', public: true }, t.array(recentViewRow), ctx => {
+  const hist = Array.from(ctx.db.history.identity.filter(ctx.sender)).filter(h => !h.oppBot).sort((a, b) => (a.id < b.id ? 1 : -1));
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const h of hist) {
+    const key = h.opp.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const o = ctx.db.player.nameKey.find(key);
+    if (!o || o.identity.isEqual(ctx.sender)) continue;
+    let relation = '';
+    for (const f of ctx.db.friend.owner.filter(ctx.sender)) if (f.other.isEqual(o.identity)) relation = f.state;
+    const k = lookFields(ctx, o.identity);
+    out.push({ name: o.name, avatar: k.avatar, frame: k.frame, rating: o.rating, isGuest: o.isGuest, relation,
+      at: tsMicros(h.at), mode: h.mode, result: h.result, you: h.you, them: h.them, reason: h.reason });
+  }
+  return out;
+});
+
+const profileViewRow = t.row('ProfileViewRow', {
+  name: t.string(), isGuest: t.bool(), isMe: t.bool(), since: t.u64(),
+  avatar: t.string(), frame: t.string(), skin: t.string(), title: t.string(),
+  rating: t.i32(), level: t.u32(), wins: t.u32(), losses: t.u32(), draws: t.u32(),
+  bestStreak: t.u32(), perfects: t.u32(),
+  achievements: t.string(),   // comma-separated award keys
+  favourite: t.string(),      // 'rock' | 'paper' | 'scissors' | '' (most played)
+  favouritePct: t.u32(),
+  form: t.string(),           // last 10 results, newest first: w, l or d
+  vsWins: t.u32(), vsLosses: t.u32(), vsDraws: t.u32(), // your record against them
+  vsLast: t.u64(), vsLastResult: t.string(),            // your last match against them
+  relation: t.string(),       // '' | 'friends' | 'in' | 'out'
+  online: t.bool(), playing: t.bool(), lastPlayed: t.u64(), // friends only
+});
+
+/** The profile you have open (see viewProfile). Never shows coins, sign-in details or who they played. */
+export const playerProfile = spacetimedb.view({ name: 'player_profile', public: true }, t.array(profileViewRow), ctx => {
+  const f = ctx.db.profileFocus.identity.find(ctx.sender);
+  const o = f ? ctx.db.player.identity.find(f.target) : undefined;
+  if (!o) return [];
+  const isMe = o.identity.isEqual(ctx.sender);
+  const st = ctx.db.stats.identity.find(o.identity);
+  const k = lookFields(ctx, o.identity);
+  const plays = [st?.plays0 ?? 0, st?.plays1 ?? 0, st?.plays2 ?? 0];
+  const total = plays[0]! + plays[1]! + plays[2]!;
+  const top = plays.indexOf(Math.max(...plays));
+  const theirs = Array.from(ctx.db.history.identity.filter(o.identity)).sort((a, b) => (a.id < b.id ? 1 : -1));
+  let vsWins = 0, vsLosses = 0, vsDraws = 0, vsLast = 0n, vsLastResult = '';
+  if (!isMe) {
+    const key = o.name.toLowerCase();
+    for (const h of ctx.db.history.identity.filter(ctx.sender)) {
+      if (h.oppBot || h.opp.toLowerCase() !== key) continue;
+      if (h.result === 'win') vsWins += 1; else if (h.result === 'loss') vsLosses += 1; else vsDraws += 1;
+      if (tsMicros(h.at) > vsLast) { vsLast = tsMicros(h.at); vsLastResult = h.result; }
+    }
+  }
+  let relation = '';
+  for (const r of ctx.db.friend.owner.filter(ctx.sender)) if (r.other.isEqual(o.identity)) relation = r.state;
+  const close = isMe || relation === 'friends';
+  const g = close && o.gameId !== 0n ? ctx.db.game.id.find(o.gameId) : undefined;
+  return [{
+    name: o.name, isGuest: o.isGuest, isMe, since: tsMicros(o.createdAt),
+    avatar: k.avatar, frame: k.frame, skin: k.skin, title: k.title,
+    rating: o.rating, level: levelOf(st?.xp ?? 0).level, wins: o.wins, losses: o.losses, draws: o.draws,
+    bestStreak: st?.bestStreak ?? 0, perfects: st?.perfects ?? 0,
+    achievements: Array.from(ctx.db.achievement.identity.filter(o.identity), a => a.key).join(','),
+    favourite: total ? ['rock', 'paper', 'scissors'][top]! : '', favouritePct: total ? Math.round((plays[top]! / total) * 100) : 0,
+    form: theirs.slice(0, 10).map(h => h.result[0]).join(''),
+    vsWins, vsLosses, vsDraws, vsLast, vsLastResult,
+    relation, online: close && o.conns > 0, playing: !!g && !g.over, lastPlayed: close ? lastPlayedOf(ctx, o.identity) : 0n,
+  }];
 });
 
 const inviteViewRow = t.row('InviteView', { id: t.u64(), fromName: t.string(), avatar: t.string(), code: t.string() });

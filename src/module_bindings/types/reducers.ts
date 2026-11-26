@@ -56,6 +56,7 @@ import SetLoadoutReducer from "../set_loadout_reducer";
 import StartDailyReducer from "../start_daily_reducer";
 import StartPracticeReducer from "../start_practice_reducer";
 import StopWatchingReducer from "../stop_watching_reducer";
+import ViewProfileReducer from "../view_profile_reducer";
 import WatchFriendReducer from "../watch_friend_reducer";
 
 export type AcceptFriendParams = __Infer<typeof AcceptFriendReducer>;
@@ -108,5 +109,6 @@ export type SetLoadoutParams = __Infer<typeof SetLoadoutReducer>;
 export type StartDailyParams = __Infer<typeof StartDailyReducer>;
 export type StartPracticeParams = __Infer<typeof StartPracticeReducer>;
 export type StopWatchingParams = __Infer<typeof StopWatchingReducer>;
+export type ViewProfileParams = __Infer<typeof ViewProfileReducer>;
 export type WatchFriendParams = __Infer<typeof WatchFriendReducer>;
 

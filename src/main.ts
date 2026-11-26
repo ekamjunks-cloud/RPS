@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.1';
+const VERSION = '2.2';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = '';
@@ -118,7 +118,8 @@ function showError(msg: string) {
   else if (isOpen('settingsSheet') && !$('setDelete').classList.contains('hide')) $('delErr').textContent = msg;
   else if (isOpen('settingsSheet') && !$('setBugPage').classList.contains('hide')) $('bugErr').textContent = msg;
   else if (isOpen('friendModal')) $('friendErr').textContent = msg;
-  else if (isOpen('friendsModal')) $('friendsErr').textContent = msg;
+  else if (isOpen('profileSheet') || isOpen('profileCard')) toast(msg, 'bad');
+  else if (isOpen('friendsSheet')) $('friendsErr').textContent = msg;
   else if (showing('scrLobby') && !document.querySelector('.sheetOv:not(.hide)')) { $('lobbyErr').textContent = msg; $('lobbyErr').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
   else toast(msg, 'bad'); // the error spot isn't on screen: show it anyway
 }
@@ -169,7 +170,7 @@ async function connect() {
         .subscribe([tables.myPlayer, tables.myGame, tables.myHand, tables.myLog, tables.myTransfer, tables.leaderboard, tables.myChat,
           tables.myStats, tables.myHistory, tables.myAchievements, tables.seasonInfo, tables.dailyStats,
           tables.myFriends, tables.myInvites, tables.watchGame, tables.watchLog,
-          tables.myItems, tables.serverInfo, tables.weeklyBoard, tables.myRank, tables.friendsBoard]);
+          tables.myItems, tables.serverInfo, tables.weeklyBoard, tables.myRank, tables.friendsBoard, tables.myRecent, tables.playerProfile]);
     })
     .onAutomaticReconnect(() => { if (my === gen) net(null); })
     .onDisconnect(() => { if (my === gen && connected) net('Reconnecting…'); })
@@ -201,7 +202,7 @@ async function connect() {
   for (const t of [conn.db.myPlayer, conn.db.myGame, conn.db.myHand, conn.db.myLog, conn.db.myTransfer, conn.db.leaderboard, conn.db.myChat,
     conn.db.myStats, conn.db.myHistory, conn.db.myAchievements, conn.db.seasonInfo, conn.db.dailyStats,
     conn.db.myFriends, conn.db.myInvites, conn.db.watchGame, conn.db.watchLog,
-    conn.db.myItems, conn.db.serverInfo, conn.db.weeklyBoard, conn.db.myRank, conn.db.friendsBoard] as any[]) {
+    conn.db.myItems, conn.db.serverInfo, conn.db.weeklyBoard, conn.db.myRank, conn.db.friendsBoard, conn.db.myRecent, conn.db.playerProfile] as any[]) {
     t.onInsert(changed); t.onDelete(changed);
     if (typeof t.onUpdate === 'function') t.onUpdate(changed);
   }
@@ -319,6 +320,7 @@ function sync() {
   renderBoard();
   renderInvites();
   renderSheets();
+  if (isOpen('profileCard')) renderProfileCard();
 
   const gv = first(conn.db.myGame.iter());
   if (gv && String(gv.gameId) !== dismissed) {
@@ -359,7 +361,7 @@ function leaveGameScreen() {
 // ---------- account ----------
 const suggestName = (n: string) => n.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
 function closeModals() {
-  for (const id of ['friendModal', 'confirmLeave', 'friendsModal', 'reportModal']) $(id).classList.add('hide');
+  for (const id of ['friendModal', 'confirmLeave', 'reportModal', 'profileCard']) $(id).classList.add('hide');
   document.querySelectorAll('.sheetOv').forEach(el => el.classList.add('hide'));
 }
 
@@ -594,7 +596,7 @@ function renderBoard() {
 }
 
 // ---------- sheets: Locker, Store, Level road, Stats, Leaderboard, Settings ----------
-const sheetTab: Record<string, string> = { lockerSheet: 'cards', storeSheet: 'skin', statsSheet: 'overview', boardSheet: 'week' };
+const sheetTab: Record<string, string> = { lockerSheet: 'cards', storeSheet: 'skin', statsSheet: 'overview', boardSheet: 'week', friendsSheet: 'friends' };
 function openSheet(id: string, tab?: string) {
   closeModals();
   if (tab) sheetTab[id] = tab;
@@ -617,6 +619,8 @@ function renderSheet(id: string) {
   else if (id === 'statsSheet') renderStats();
   else if (id === 'boardSheet') renderBoardSheet();
   else if (id === 'settingsSheet') renderSettings();
+  else if (id === 'friendsSheet') renderFriends();
+  else if (id === 'profileSheet') renderProfile();
 }
 /** Keeps any open sheet up to date when the server sends something new. */
 function renderSheets() {
@@ -1790,10 +1794,10 @@ function renderBoardSheet() {
   else {
     html += '<div class="podium">' + order.map(i => {
       const x = podium[i]!;
-      return `<div class="pd p${i + 1}${isMe(x) ? ' mine' : ''}">${avatarHtml(x.avatar, x.frame, i === 0 ? 62 : 52)}<b>${esc(x.name)}</b><small>${val(x.v)}</small><span class="step">${i + 1}</span></div>`;
+      return `<div class="pd p${i + 1}${isMe(x) ? ' mine' : ''}"${isMe(x) ? '' : ` data-prof="${esc(x.name)}"`}>${avatarHtml(x.avatar, x.frame, i === 0 ? 62 : 52)}<b>${esc(x.name)}</b><small>${val(x.v)}</small><span class="step">${i + 1}</span></div>`;
     }).join('') + '</div>';
     html += '<div class="rows">' + rows.slice(3, 10).map((x, i) =>
-      `<div class="rw${isMe(x) ? ' mine' : ''}"><span class="n">${i + 4}</span>${avatarHtml(x.avatar, x.frame, 32)}<span class="nm">${esc(x.name)}${titleHtml(x.title)}</span><span class="pt">${val(x.v)}</span></div>`).join('') + '</div>';
+      `<div class="rw${isMe(x) ? ' mine' : ''}"${isMe(x) ? '' : ` data-prof="${esc(x.name)}"`}><span class="n">${i + 4}</span>${avatarHtml(x.avatar, x.frame, 32)}<span class="nm">${esc(x.name)}${titleHtml(x.title)}</span><span class="pt">${val(x.v)}</span></div>`).join('') + '</div>';
   }
   if (!boardFriends && me) {
     const rank = week ? r?.weekRank : r?.monthRank;
@@ -1809,7 +1813,9 @@ function renderBoardSheet() {
 }
 $('boardSheet').addEventListener('click', (e: Event) => {
   const b = (e.target as HTMLElement).closest('[data-bf]') as HTMLElement | null;
-  if (b) { boardFriends = b.dataset.bf === '1'; renderBoardSheet(); }
+  if (b) { boardFriends = b.dataset.bf === '1'; renderBoardSheet(); return; }
+  const pr = (e.target as HTMLElement).closest('[data-prof]') as HTMLElement | null;
+  if (pr) openProfile(pr.dataset.prof!);
 });
 
 // ---------- Settings ----------
@@ -1873,33 +1879,64 @@ $('btnGameSet').onclick = () => { openSheet('settingsSheet'); settingsPage('setM
 $('btnSettings').onclick = () => { openSheet('settingsSheet'); settingsPage('setMain'); };
 $('loadRetry').onclick = () => connect();
 
-// friends list
-const STATUS = (f: any) => f.state === 'in' ? 'Wants to be friends' : f.state === 'out' ? 'Request sent' : f.playing ? '🟢 In a match' : f.online ? '🟢 Online' : 'Offline';
+// ---------- friends: a full screen with Friends, Requests and Played with ----------
+const microsMs = (x: any) => Number(BigInt(x ?? 0) / 1000n);
+const sinceText = (micros: any) => { const t = microsMs(micros); return t ? ago(t) : ''; };
+const MODE_NAME: Record<string, string> = { ranked: 'Ranked', casual: 'Unranked', room: 'Friend room', bot: 'Online', practice: 'Practice', daily: 'Daily' };
+const resultHtml = (r: string, you: number, them: number, reason = 'points') => `<span class="res-${r}">${reason !== 'points' && r !== 'draw' ? (r === 'win' ? 'won · they left' : 'you left') : `${r === 'win' ? 'won' : r === 'loss' ? 'lost' : 'draw'} ${you}–${them}`}</span>`;
+function friendRow(f: any, mid: string, acts: string) {
+  return `<div class="fr${f.online ? ' on' : ''}" data-prof="${esc(f.name)}">${avatarHtml(f.avatar, f.frame, 40)}`
+    + `<div class="frMid"><b>${esc(f.name)} ${f.isGuest || /^guest_/i.test(f.name) ? '' : tierBadge(tierOf(f.rating), 'xs')}</b><small>${mid}</small></div>${acts}</div>`;
+}
 function renderFriends() {
+  const tab = sheetTab.friendsSheet;
   const all = Array.from(conn.db.myFriends.iter());
-  const order = (f: any) => (f.state === 'in' ? 0 : f.state === 'friends' ? (f.playing ? 1 : f.online ? 2 : 3) : 4);
-  all.sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+  const incoming = all.filter(f => f.state === 'in');
+  $('reqBadge').textContent = incoming.length ? String(incoming.length) : '';
+  $('addFriendForm').classList.toggle('hide', tab !== 'friends');
   const busy = !!G && !G.ended;
-  $('friendsList').innerHTML = all.length ? all.map(f => {
-    const id = f.identity.toHexString();
-    let acts = '';
-    if (f.state === 'in') acts = `<button class="mini go" data-act="accept" data-id="${id}">Accept</button><button class="mini" data-act="remove" data-id="${id}">✕</button>`;
-    else if (f.state === 'out') acts = `<button class="mini" data-act="remove" data-id="${id}">Cancel</button>`;
-    else {
-      if (f.playing) acts += `<button class="mini go" data-act="watch" data-id="${id}" ${busy ? 'disabled' : ''}>👀 Watch</button>`;
-      else if (f.online) acts += `<button class="mini go" data-act="invite" data-id="${id}" ${busy ? 'disabled' : ''}>Invite</button>`;
-      acts += `<button class="mini dim" data-act="unfriend" data-id="${id}" data-name="${esc(f.name)}" aria-label="Remove friend">⋯</button>`;
-    }
-    return `<div class="fr ${f.state}${f.online ? ' on' : ''}">${avatarHtml(f.avatar, f.frame, 36)}`
-      + `<div class="frMid"><b>${f.state === 'friends' ? tierBadge(tierOf(f.rating), 'xs') : ''}${esc(f.name)}</b><small>${STATUS(f)}</small></div>${acts}</div>`;
-  }).join('') : '<div class="empty">No friends yet. Add someone by their username.</div>';
+  const id = (f: any) => f.identity.toHexString();
+  let html = '';
+  if (tab === 'friends') {
+    const fr = all.filter(f => f.state === 'friends').sort((a, b) => a.name.localeCompare(b.name));
+    const on = fr.filter(f => f.online).sort((a, b) => Number(b.playing) - Number(a.playing)), off = fr.filter(f => !f.online).sort((a, b) => Number(b.lastPlayed - a.lastPlayed));
+    if (!fr.length) html = `<div class="empty">No friends yet. Add someone by their username, or find people you played in <b>Played with</b>.</div>`;
+    if (on.length) html += `<h4>Online · ${on.length}</h4><div class="frList">` + on.map(f => friendRow(f,
+      f.playing ? '<span class="onTx">In a match</span>' : '<span class="onTx">Online</span>',
+      f.playing ? `<button class="mini" type="button" data-act="watch" data-id="${id(f)}" ${busy ? 'disabled' : ''}>Watch</button>`
+        : `<button class="mini go" type="button" data-act="invite" data-id="${id(f)}" ${busy ? 'disabled' : ''}>Invite</button>`)).join('') + '</div>';
+    if (off.length) html += `<h4>Offline · ${off.length}</h4><div class="frList">` + off.map(f => friendRow(f,
+      f.lastPlayed ? `Last played ${sinceText(f.lastPlayed)}` : 'Offline', '<span class="chev" aria-hidden="true">›</span>')).join('') + '</div>';
+    if (fr.length) html += '<p class="muted small ctr">Tap a friend to see their profile. Removing a friend is at the bottom of it.</p>';
+  } else if (tab === 'requests') {
+    const out = all.filter(f => f.state === 'out');
+    if (!incoming.length && !out.length) html = '<div class="empty">No friend requests right now.</div>';
+    if (incoming.length) html += `<h4>Wants to be your friend · ${incoming.length}</h4><div class="frList">` + incoming.map(f => friendRow(f, `Sent ${sinceText(f.since)}`,
+      `<button class="mini go" type="button" data-act="accept" data-id="${id(f)}">Accept</button><button class="mini" type="button" data-act="remove" data-id="${id(f)}" aria-label="Decline ${esc(f.name)}'s request">✕</button>`)).join('') + '</div>';
+    if (out.length) html += `<h4>You asked · ${out.length}</h4><div class="frList">` + out.map(f => friendRow(f, `Sent ${sinceText(f.since)} · waiting for them`,
+      `<button class="mini" type="button" data-act="remove" data-id="${id(f)}">Cancel</button>`)).join('') + '</div>';
+  } else {
+    const rec = Array.from(conn.db.myRecent.iter()).sort((a, b) => Number(b.at - a.at));
+    if (!rec.length) html = '<div class="empty">Nobody yet. The real people you play show up here, so you can add them as friends.</div>';
+    else html = `<h4>Recent opponents <span class="sub">your last 20 matches</span></h4><div class="frList">` + rec.map(r => {
+      const act = r.relation === 'friends' ? '<span class="frTag">Friends</span>'
+        : r.relation === 'out' ? '<span class="frTag dim">Sent</span>'
+        : r.relation === 'in' ? `<button class="mini go" type="button" data-act="acceptName" data-name="${esc(r.name)}">Accept</button>`
+        : `<button class="mini" type="button" data-act="addName" data-name="${esc(r.name)}">Add</button>`;
+      return friendRow(r, `${MODE_NAME[r.mode] || r.mode} · ${sinceText(r.at)} · ${resultHtml(r.result, r.you, r.them, r.reason)}`, act);
+    }).join('') + '</div><p class="muted small ctr">Bots aren\'t listed.</p>';
+  }
+  $('friendsSheetBody').innerHTML = html;
 }
 function friendsBadge() {
   const n = Array.from(conn.db.myFriends.iter()).filter(f => f.state === 'in').length + Number(conn.db.myInvites.count());
   $('friendsBadge').textContent = n ? String(Math.min(Number(n), 9)) : '';
 }
-$('btnFriends').onclick = () => { $('friendsErr').textContent = ''; renderFriends(); $('friendsModal').classList.remove('hide'); };
-$('friendsClose').onclick = () => $('friendsModal').classList.add('hide');
+$('btnFriends').onclick = () => {
+  $('friendsErr').textContent = '';
+  const asked = Array.from(conn.db.myFriends.iter()).some(f => f.state === 'in');
+  openSheet('friendsSheet', asked ? 'requests' : sheetTab.friendsSheet);
+};
 $('addFriendForm').onsubmit = (e: Event) => {
   e.preventDefault();
   const name = $('addFriendName').value.trim();
@@ -1907,25 +1944,133 @@ $('addFriendForm').onsubmit = (e: Event) => {
   $('friendsErr').textContent = '';
   call('addFriend', { name }).then(ok => { if (ok) { $('addFriendName').value = ''; toast(`Friend request sent to ${name}`); } });
 };
-$('friendsList').addEventListener('click', (e: Event) => {
-  const b = (e.target as HTMLElement).closest('button[data-act]') as HTMLButtonElement | null;
-  if (!b || b.disabled) return;
-  const f = Array.from(conn.db.myFriends.iter()).find(x => x.identity.toHexString() === b.dataset.id);
-  if (!f) return;
-  const other = f.identity;
+/** Friend actions, from the Friends screen, a profile or the in-match card. */
+async function friendAct(act: string, el: HTMLElement) {
   $('friendsErr').textContent = '';
-  switch (b.dataset.act) {
-    case 'accept': call('acceptFriend', { other }).then(ok => ok && toast(`You and ${f.name} are now friends 🤝`)); break;
-    case 'remove': call('removeFriend', { other }); break;
-    case 'unfriend': if (confirm(`Remove ${f.name} from your friends?`)) call('removeFriend', { other }); break;
+  const byName = (n: string) => Array.from(conn.db.myFriends.iter()).find(x => x.name.toLowerCase() === n.toLowerCase());
+  const f = el.dataset.id ? Array.from(conn.db.myFriends.iter()).find(x => x.identity.toHexString() === el.dataset.id) : el.dataset.name ? byName(el.dataset.name) : undefined;
+  switch (act) {
+    case 'addName': if (await call('addFriend', { name: el.dataset.name })) toast(`Friend request sent to ${el.dataset.name}`); break;
+    case 'acceptName': case 'accept':
+      if (f && await call('acceptFriend', { other: f.identity })) toast(`You and ${f.name} are now friends`);
+      break;
+    case 'remove': if (f) call('removeFriend', { other: f.identity }); break;
+    case 'unfriend':
+      if (!f) break;
+      // two taps instead of a browser pop-up: the first one asks
+      if (el.dataset.sure !== '1') { el.dataset.sure = '1'; el.textContent = `Tap again to remove ${f.name}`; setTimeout(() => { el.dataset.sure = ''; el.textContent = 'Remove friend'; }, 3500); break; }
+      el.dataset.sure = '';
+      if (await call('removeFriend', { other: f.identity })) { toast(`${f.name} is no longer your friend`); renderSheets(); }
+      break;
     case 'invite':
-      call('inviteFriend', { other }).then(ok => { if (ok) { $('friendsModal').classList.add('hide'); toast(`Invite sent to ${f.name}`); } });
+      if (f && await call('inviteFriend', { other: f.identity })) { closeModals(); toast(`Invite sent to ${f.name}`); }
       break;
     case 'watch':
-      call('watchFriend', { other }).then(ok => { if (ok) $('friendsModal').classList.add('hide'); });
+      if (f && await call('watchFriend', { other: f.identity })) closeModals();
       break;
+    case 'look': openSheet('lockerSheet', 'profile'); break;
+    case 'full': if (profName) { $('profileCard').classList.add('hide'); profFrom = ''; openSheet('profileSheet'); } break;
+    case 'report': $('profileCard').classList.add('hide'); closeSheet('profileSheet'); openReport(); break;
+    case 'closeCard': $('profileCard').classList.add('hide'); break;
   }
-});
+}
+for (const id of ['friendsSheetBody', 'profileSheetBody', 'profileCardBody']) {
+  $(id).addEventListener('click', (e: Event) => {
+    const t = e.target as HTMLElement;
+    const b = t.closest('[data-act]') as HTMLButtonElement | null;
+    if (b) { if (!b.disabled) friendAct(b.dataset.act!, b); return; }
+    const row = t.closest('[data-prof]') as HTMLElement | null;
+    if (row && id === 'friendsSheetBody') openProfile(row.dataset.prof!);
+  });
+}
+
+// ---------- player profiles ----------
+let profName = '', profFrom = '';
+/** Opens a player's profile: a short card during your match, a full screen anywhere else. */
+function openProfile(name: string) {
+  if (!name || /_bot$/i.test(name)) return;
+  profName = name;
+  call('viewProfile', { name });
+  const inMatch = !!G && !G.ended && showing('scrGame');
+  if (inMatch) { renderProfileCard(); $('profileCard').classList.remove('hide'); return; }
+  profFrom = Array.from(document.querySelectorAll<HTMLElement>('.sheetOv:not(.hide)')).map(el => el.id).find(id => id !== 'profileSheet') || '';
+  openSheet('profileSheet');
+}
+$('profBack').onclick = () => { const from = profFrom; closeSheet('profileSheet'); if (from) openSheet(from); };
+$('profileCard').addEventListener('click', (e: Event) => { if (e.target === $('profileCard')) $('profileCard').classList.add('hide'); });
+/** True when this profile is the person you're playing right now. */
+const playingNow = (p: any) => !!G && !G.ended && !!G.opp && !G.opp.isBot && G.opp.name.toLowerCase() === p.name.toLowerCase();
+const shownProfile = () => { const p: any = first(conn.db.playerProfile.iter()); return p && p.name.toLowerCase() === profName.toLowerCase() ? p : null; };
+function profileActs(p: any, card: boolean) {
+  if (p.isMe) return `<button class="btn ghost" type="button" data-act="look">Change your look</button>`;
+  const fr = Array.from(conn.db.myFriends.iter()).find(x => x.name.toLowerCase() === p.name.toLowerCase());
+  const busy = !!G && !G.ended;
+  const nm = `data-name="${esc(p.name)}"`;
+  let main = '';
+  if (p.relation === 'friends' && fr && playingNow(p)) main = '<span class="pfTag">✓ Friends</span>';
+  else if (p.relation === 'friends' && fr) {
+    main = p.playing ? `<button class="btn" type="button" data-act="watch" ${nm} ${busy ? 'disabled' : ''}>Watch their match</button>`
+      : p.online ? `<button class="btn gold" type="button" data-act="invite" ${nm} ${busy ? 'disabled' : ''}>Invite to play</button>`
+      : `<button class="btn ghost" type="button" disabled>Offline${p.lastPlayed ? ` · played ${sinceText(p.lastPlayed)}` : ''}</button>`;
+    main += '<span class="pfTag">✓ Friends</span>';
+  } else if (p.relation === 'in') main = `<button class="btn primary" type="button" data-act="acceptName" ${nm}>Accept friend request</button>`;
+  else if (p.relation === 'out') main = '<button class="btn ghost" type="button" disabled>Friend request sent</button>';
+  else main = `<button class="btn primary" type="button" data-act="addName" ${nm}>Add friend</button>`;
+  if (card) main += `<button class="btn ghost" type="button" data-act="full">Full profile</button>`;
+  return main;
+}
+function profileHead(p: any, size: number) {
+  const t = tierOf(p.rating);
+  const status = p.isMe ? '' : playingNow(p) ? ' · <span class="onTx">Playing you</span>' : p.playing ? ' · <span class="onTx">In a match</span>' : p.online ? ' · <span class="onTx">Online</span>' : '';
+  return `${avatarHtml(p.avatar, p.frame, size, p.name)}<div class="pfWho"><b class="pfName">${esc(p.name)}</b>${titleHtml(p.title)}`
+    + `<small>${p.isGuest ? '<span class="pill">Guest</span> ' : `${tierBadge(t, 'xs')} ${t.name} ${fmt(p.rating)} · `}Level ${p.level}${status}</small></div>`;
+}
+function renderProfile() {
+  const p = shownProfile();
+  if (!p) { $('profileSheetBody').innerHTML = '<div class="empty">Loading…</div>'; return; }
+  $('profBack').style.visibility = profFrom ? '' : 'hidden';
+  const played = p.wins + p.losses + p.draws;
+  const cell = (v: any, l: string) => `<div><b>${v}</b><small>${l}</small></div>`;
+  const vs = p.vsWins + p.vsLosses + p.vsDraws;
+  const got = new Set(p.achievements ? p.achievements.split(',') : []);
+  const form = [...p.form].map((r: string) => `<i class="o${r}">${r.toUpperCase()}</i>`).join('');
+  const fr = Array.from(conn.db.myFriends.iter()).find(x => x.name.toLowerCase() === p.name.toLowerCase());
+  const lastOpp = !!G && !!G.opp && !G.opp.isBot && G.opp.name.toLowerCase() === p.name.toLowerCase();
+  let html = `<div class="pfHead">${profileHead(p, 92)}</div>`
+    + `<div class="pfActs">${profileActs(p, false)}</div>`
+    + `<div class="stGrid g4">${cell(played, 'Matches')}${cell(pct(p.wins, played), 'Win rate')}${cell(p.bestStreak, 'Best streak')}${cell(p.perfects, 'Perfect 10s')}</div>`;
+  if (!p.isMe) html += vs
+    ? `<div class="h2h"><div><small>You vs ${esc(p.name)}</small><b>${p.vsWins} – ${p.vsLosses}</b>${p.vsDraws ? `<small>${p.vsDraws} draw${p.vsDraws === 1 ? '' : 's'}</small>` : ''}</div>`
+      + `<div class="h2hR"><small>${vs} match${vs === 1 ? '' : 'es'} · last ${sinceText(p.vsLast)}</small><small class="res-${p.vsLastResult}">${p.vsLastResult === 'win' ? 'You won the last one' : p.vsLastResult === 'loss' ? 'They won the last one' : 'The last one was a draw'}</small></div></div>`
+    : `<div class="h2h none"><small>You haven't played ${esc(p.name)} yet.</small></div>`;
+  html += `<h4>Last 10 matches <span class="sub">Newest first</span></h4><div class="last10">${form || '<span class="muted">No matches yet.</span>'}</div>`
+    + `<div class="pfRow">${p.favourite ? `<div class="pfMini">${mini(p.favourite)}<span><b>${p.favourite[0].toUpperCase() + p.favourite.slice(1)}</b>plays it ${p.favouritePct}%</span></div>` : ''}`
+    + `<div class="pfMini">${skinTrio(p.skin, 'xs')}<span><b>${esc(nameOf('skin:' + p.skin))}</b>card style</span></div></div>`
+    + `<h4>Awards <span class="sub">${got.size} of ${ACHIEVEMENTS.length}</span></h4>${got.size ? `<div class="pfAwards">${ACHIEVEMENTS.filter(a => got.has(a.key)).map(a => `<span class="pfAw on" title="${esc(a.name)}: ${esc(a.how)}" aria-label="${esc(a.name)}">${a.icon}</span>`).join('')}</div>` : '<p class="muted small">No awards yet.</p>'}`
+    + `<p class="muted small ctr">Playing since ${new Date(microsMs(p.since)).toLocaleDateString('en', { month: 'long', year: 'numeric' })}</p>`;
+  const foot = (lastOpp ? '<button class="linkBtn" type="button" data-act="report">Report</button>' : '')
+    + (p.relation === 'friends' && fr ? `<button class="linkBtn red" type="button" data-act="unfriend" data-id="${fr.identity.toHexString()}">Remove friend</button>` : '');
+  if (foot) html += `<div class="pfFoot">${foot}</div>`;
+  const body = $('profileSheetBody');
+  // don't redraw over a "Tap again to remove" that's waiting for its second tap
+  if (body.querySelector('[data-sure="1"]')) return;
+  body.innerHTML = html;
+}
+function renderProfileCard() {
+  const p = shownProfile();
+  if (!p) { $('profileCardBody').innerHTML = '<div class="empty">Loading…</div>'; return; }
+  const played = p.wins + p.losses + p.draws;
+  const cell = (v: any, l: string) => `<div><b>${v}</b><small>${l}</small></div>`;
+  const fav = p.favourite ? p.favourite[0].toUpperCase() + p.favourite.slice(1) : '—';
+  $('profileCardBody').innerHTML = `<div class="pfHead row">${profileHead(p, 60)}</div>`
+    + `<div class="stGrid g4">${cell(played, 'Matches')}${cell(pct(p.wins, played), 'Win rate')}${cell(`${p.vsWins}–${p.vsLosses}`, 'Vs you')}${cell(fav, 'Favourite')}</div>`
+    + `<div class="pfActs">${profileActs(p, true)}</div>`
+    + `<div class="pfFoot"><button class="linkBtn" type="button" data-act="report">Report</button><button class="linkBtn" type="button" data-act="closeCard">Close</button></div>`;
+}
+const oppProfile = () => { if (G && G.opp && !G.opp.isBot) openProfile(G.opp.name); };
+$('sideOpp').addEventListener('click', oppProfile);
+$('sideOpp').addEventListener('keydown', (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); oppProfile(); } });
+$('endNameOpp').addEventListener('click', oppProfile);
 
 // invites from friends: a bar in the lobby, and a toast wherever you are
 let invitesSeen: Set<string> | null = null;
@@ -1939,7 +2084,6 @@ function renderInvites() {
   bar.innerHTML = inv.slice(0, 3).map(i => `<div class="inv">${avatarHtml(i.avatar, '', 30)}<span class="invTx"><b>${esc(i.fromName)}</b> invited you to a match</span>`
     + `<button class="mini go" data-join="${esc(i.code)}">Join</button><button class="mini" data-dismiss="${i.id}" aria-label="Dismiss">✕</button></div>`).join('');
   friendsBadge();
-  if (!$('friendsModal').classList.contains('hide')) renderFriends();
 }
 $('inviteBar').addEventListener('click', async (e: Event) => {
   const t = e.target as HTMLElement;

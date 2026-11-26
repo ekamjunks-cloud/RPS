@@ -826,6 +826,59 @@ describe('friends, invites and reports', () => {
   });
 });
 
+describe('player profiles and recent opponents', () => {
+  const v = (test: any, c: any, view: any) => (view as any)(test.viewContext(c.auth)) as any[];
+
+  it('shows a profile with stats, form and your record against them, and hides private details', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b'), c = client('c');
+    a.call(mod.createRoom);
+    b.call(mod.joinRoom, { code: a.me().roomCode });
+    playOut([a, b]);
+    const res = a.game().endResult;
+    a.call(mod.leaveGame); b.call(mod.leaveGame);
+    expect(() => c.call(mod.viewProfile, { name: 'nobody_here' })).toThrow('no longer around');
+    // a stranger sees stats but not whether they're online
+    c.call(mod.viewProfile, { name: a.me().name.toUpperCase() });
+    const pc = v(test, c, mod.playerProfile)[0];
+    expect(pc).toMatchObject({ name: a.me().name, isMe: false, relation: '', online: false, lastPlayed: 0n, vsWins: 0 });
+    expect(pc.form).toHaveLength(1);
+    expect(pc.wins + pc.losses + pc.draws).toBe(1);
+    expect(pc).not.toHaveProperty('coins');
+    // the opponent sees the head-to-head
+    b.call(mod.viewProfile, { name: a.me().name });
+    const pb = v(test, b, mod.playerProfile)[0];
+    expect(pb.vsWins + pb.vsLosses + pb.vsDraws).toBe(1);
+    expect(pb.vsLastResult).toBe(res === 'win' ? 'loss' : res === 'loss' ? 'win' : 'draw');
+    // friends also see online and last played
+    a.call(mod.addFriend, { name: b.me().name }); b.call(mod.addFriend, { name: a.me().name });
+    const pf = v(test, b, mod.playerProfile)[0];
+    expect(pf).toMatchObject({ relation: 'friends', online: true });
+    expect(pf.lastPlayed > 0n).toBe(true);
+    // your own profile
+    a.call(mod.viewProfile, { name: a.me().name });
+    expect(v(test, a, mod.playerProfile)[0].isMe).toBe(true);
+  });
+
+  it('lists the real people you played recently, once each, with friend state', () => {
+    const { test, client, playOut } = setup();
+    const a = client('a'), b = client('b');
+    for (let i = 0; i < 2; i++) {
+      a.call(mod.createRoom);
+      b.call(mod.joinRoom, { code: a.me().roomCode });
+      playOut([a, b]);
+      a.call(mod.leaveGame); b.call(mod.leaveGame);
+    }
+    a.call(mod.startPractice); playOut([a]); a.call(mod.leaveGame); // bots aren't listed
+    expect(v(test, a, mod.myRecent)).toMatchObject([{ name: b.me().name, relation: '', mode: 'room' }]);
+    a.call(mod.addFriend, { name: b.me().name });
+    expect(v(test, a, mod.myRecent)[0].relation).toBe('out');
+    const [f] = v(test, a, mod.myFriends);
+    expect(f.since > 0n).toBe(true);
+    expect(f.level).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe('watching a friend', () => {
   const watch = (test: any, c: any) => (mod.watchGame as any)(test.viewContext(c.auth))[0];
   it('shows only public information, follows rematches, and stops when the watcher plays', () => {
