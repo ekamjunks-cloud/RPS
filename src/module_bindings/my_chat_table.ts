@@ -15,4 +15,5 @@ export default __t.row({
   mine: __t.bool(),
   kind: __t.string(),
   body: __t.string(),
+  gameId: __t.u64().name("game_id"),
 });

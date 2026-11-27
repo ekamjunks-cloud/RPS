@@ -44,8 +44,7 @@ const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting'
 
 // chat: only the reactions and phrases in src/catalog.ts can be sent, so there is no free typing between strangers.
 const CHAT_KEEP = 40;            // messages kept per game
-const CHAT_BURST = 4;            // at most this many messages...
-const CHAT_BURST_MS = 4000;      // ...in this long, per player
+const CHAT_GAP_MS = 3000;        // one message every 3 seconds, per player
 
 // card kinds: 0 rock, 1 paper, 2 scissors
 const beats = (a: number, b: number) => (a - b + 3) % 3 === 1;
@@ -1167,7 +1166,7 @@ export const finishTutorial = spacetimedb.reducer(ctx => {
 export const claimName = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   const p = me(ctx);
   if (!p.isGuest) throw new SenderError('You already have an account');
-  if (config.firebaseProjectId && !isGoogle(ctx)) throw new SenderError('Sign in with Google first');
+  if (config.firebaseProjectId && !isGoogle(ctx)) throw new SenderError('Sign in first');
   name = name.trim();
   if (!/^[A-Za-z0-9_]{3,16}$/.test(name)) throw new SenderError('Username: 3–16 letters, numbers or _');
   const key = name.toLowerCase();
@@ -1188,7 +1187,7 @@ export const prepareTransfer = spacetimedb.reducer(ctx => {
 
 /** Called right after signing in with Google: a brand-new account takes over the guest's stats and progress. */
 export const claimTransfer = spacetimedb.reducer({ code: t.string() }, (ctx, { code }) => {
-  if (!isGoogle(ctx)) throw new SenderError('Sign in with Google first');
+  if (!isGoogle(ctx)) throw new SenderError('Sign in first');
   const p = me(ctx);
   const row = ctx.db.transfer.code.find(code);
   if (!row) return;
@@ -1415,10 +1414,8 @@ export const sendChat = spacetimedb.reducer({ kind: t.string(), body: t.string()
   if (kind !== 'emoji' && kind !== 'phrase') throw new SenderError('Unknown message type');
   if (!pack) throw new SenderError(kind === 'emoji' ? 'Unknown reaction' : 'Pick one of the phrases');
   if (!ownedItems(ctx, p.identity).has(`pack:${pack}`)) throw new SenderError('Unlock that chat pack first');
-  const since = ctx.timestamp.microsSinceUnixEpoch - BigInt(CHAT_BURST_MS) * 1000n;
-  let recent = 0;
-  for (const m of ctx.db.chatMsg.gameId.filter(g.id)) if (m.seat === seat && m.at.microsSinceUnixEpoch > since) recent++;
-  if (recent >= CHAT_BURST) throw new SenderError('Slow down a little');
+  const since = ctx.timestamp.microsSinceUnixEpoch - BigInt(CHAT_GAP_MS) * 1000n;
+  for (const m of ctx.db.chatMsg.gameId.filter(g.id)) if (m.seat === seat && m.at.microsSinceUnixEpoch > since) throw new SenderError('Wait a moment before your next message');
   postChat(ctx, g.id, seat, kind, body);
 });
 
@@ -2150,7 +2147,7 @@ export const myGame = spacetimedb.view({ name: 'my_game', public: true }, t.arra
   }];
 });
 
-const chatViewRow = t.row('ChatView', { id: t.u64(), mine: t.bool(), kind: t.string(), body: t.string() });
+const chatViewRow = t.row('ChatView', { id: t.u64(), mine: t.bool(), kind: t.string(), body: t.string(), gameId: t.u64() });
 
 /** Chat in the game you're in: yours and your opponent's. */
 export const myChat = spacetimedb.view({ name: 'my_chat', public: true }, t.array(chatViewRow), ctx => {
@@ -2160,7 +2157,7 @@ export const myChat = spacetimedb.view({ name: 'my_chat', public: true }, t.arra
   if (!g) return [];
   const seat = g.p0.isEqual(ctx.sender) ? 0 : !g.p1Bot && g.p1.isEqual(ctx.sender) ? 1 : -1;
   if (seat === -1) return [];
-  return Array.from(ctx.db.chatMsg.gameId.filter(g.id), m => ({ id: m.id, mine: m.seat === seat, kind: m.kind, body: m.body }));
+  return Array.from(ctx.db.chatMsg.gameId.filter(g.id), m => ({ id: m.id, mine: m.seat === seat, kind: m.kind, body: m.body, gameId: m.gameId }));
 });
 
 const handViewRow = t.row('HandCardView', { id: t.u64(), kind: t.u8(), pos: t.u32() });

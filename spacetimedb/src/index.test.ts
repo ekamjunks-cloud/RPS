@@ -123,7 +123,7 @@ describe('Google sign-in', () => {
   it('requires a Google sign-in to create an account once Firebase is configured', () => withFirebase(() => {
     const { client } = setup();
     const guest = client('g'), user = client('u', true);
-    expect(() => guest.call(mod.claimName, { name: 'sneaky' })).toThrow('Sign in with Google first');
+    expect(() => guest.call(mod.claimName, { name: 'sneaky' })).toThrow('Sign in first');
     user.call(mod.claimName, { name: 'ekam' });
     expect(user.me()).toMatchObject({ name: 'ekam', isGuest: false });
   }));
@@ -132,7 +132,7 @@ describe('Google sign-in', () => {
     const { test } = setup();
     const other = TestAuth.fromJwtPayload(JSON.stringify({ iss: 'https://securetoken.google.com/someone-else', aud: 'someone-else', sub: 'x' }), new ConnectionId(900n));
     test.withReducerTx(other, ctx => (mod.onConnect as any)(ctx, {}));
-    expect(() => test.withReducerTx(other, ctx => (mod.claimName as any)(ctx, { name: 'intruder' }))).toThrow('Sign in with Google first');
+    expect(() => test.withReducerTx(other, ctx => (mod.claimName as any)(ctx, { name: 'intruder' }))).toThrow('Sign in first');
   }));
 
   it('moves a guest\'s progress to the new Google account, once', () => withFirebase(() => {
@@ -173,7 +173,7 @@ describe('Google sign-in', () => {
   it('does not allow transfers by callers who are not signed in with Google', () => withFirebase(() => {
     const { client } = setup();
     const a = client('a');
-    expect(() => a.call(mod.claimTransfer, { code: 'x' })).toThrow('Sign in with Google first');
+    expect(() => a.call(mod.claimTransfer, { code: 'x' })).toThrow('Sign in first');
   }));
 });
 
@@ -573,11 +573,12 @@ describe('chat', () => {
     expect(chat(a).map(m => [m.mine, m.kind, m.body])).toEqual([[true, 'phrase', 'Good luck!'], [false, 'emoji', 'lol']]);
     expect(chat(b).map(m => [m.mine, m.body])).toEqual([[false, 'Good luck!'], [true, 'lol']]);
     expect(chat(c)).toEqual([]);
+    expect(new Set(chat(a).map(m => m.gameId)).size).toBe(1); expect(chat(a)[0].gameId).toBe(BigInt(a.game().gameId)); // tagged with the game, so a client never shows an old match's chat
     expect(() => c.call(mod.sendChat, { kind: 'emoji', body: 'nice' })).toThrow('not in a match');
   });
 
   it('refuses anything typed, and anything not on the lists', () => {
-    const { a, chat } = room();
+    const { a, chat, test } = room();
     expect(() => a.call(mod.sendChat, { kind: 'text', body: 'hello' })).toThrow('Unknown message type');
     expect(() => a.call(mod.sendChat, { kind: 'phrase', body: 'you are bad' })).toThrow('Pick one of the phrases');
     expect(() => a.call(mod.sendChat, { kind: 'phrase', body: 'good luck!' })).toThrow('Pick one of the phrases');
@@ -586,16 +587,18 @@ describe('chat', () => {
     expect(() => a.call(mod.sendChat, { kind: 'emoji', body: 'king' })).toThrow('Unlock that chat pack');
     expect(() => a.call(mod.sendChat, { kind: 'phrase', body: 'Too easy' })).toThrow('Unlock that chat pack');
     expect(chat(a)).toEqual([]);
-    for (const e of ['nice', 'lol', 'whoa', 'grr']) a.call(mod.sendChat, { kind: 'emoji', body: e });
+    for (const e of ['nice', 'lol', 'whoa', 'grr']) { a.call(mod.sendChat, { kind: 'emoji', body: e }); test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + 3_000_000n)); }
     expect(chat(a).map(m => m.body)).toEqual(['nice', 'lol', 'whoa', 'grr']);
   });
 
-  it('slows down a player who sends too fast', () => {
+  it('makes a player wait 3 seconds between messages', () => {
     const { a, b, test } = room();
-    for (let i = 0; i < 4; i++) a.call(mod.sendChat, { kind: 'emoji', body: 'whoa' });
-    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: 'whoa' })).toThrow('Slow down');
+    a.call(mod.sendChat, { kind: 'emoji', body: 'whoa' });
+    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: 'whoa' })).toThrow('Wait a moment');
     b.call(mod.sendChat, { kind: 'emoji', body: 'nice' }); // the other player isn't affected
-    test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + 5_000_000n));
+    test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + 2_900_000n));
+    expect(() => a.call(mod.sendChat, { kind: 'emoji', body: 'whoa' })).toThrow('Wait a moment');
+    test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + 200_000n));
     a.call(mod.sendChat, { kind: 'phrase', body: 'Nice one!' });
   });
 

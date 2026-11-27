@@ -106,15 +106,17 @@ export const sfx = {
 };
 
 
-// ---------- music: two short loops made in code, so there is no music file to download ----------
-// A relaxed loop in the lobby, a quieter one during a match that picks up a little in the final round.
+// ---------- music: one loop made in code, playing in step on every device ----------
+// Everyone hears the same track at the same moment: the note that plays is worked out from the time of day
+// (internet time, see syncClock), not from when you opened the game. Opening the game, a new screen or a
+// hidden tab coming back all just join the song where it is. Volume is a little lower during a match.
 // It starts after the first tap (browsers require that), sits under the sound effects and pauses in a hidden tab.
 const MUSIC_KEY = 'rps10_music';
 let musicOn = (() => { try { return localStorage.getItem(MUSIC_KEY) !== '0'; } catch { return true; } })();
 type Track = 'lobby' | 'match' | 'final' | null;
 let track: Track = null;
 let musicGain: GainNode | null = null;
-let nextBeat = 0, beatN = 0, loopTimer: any = 0;
+let lastBeat = -1, loopTimer: any = 0;
 
 export const isMusicOn = () => musicOn;
 export function setMusicOn(on: boolean) {
@@ -122,13 +124,13 @@ export function setMusicOn(on: boolean) {
   try { localStorage.setItem(MUSIC_KEY, on ? '1' : '0'); } catch {}
   fadeMusic();
 }
-/** Which loop should play: 'lobby', 'match', 'final' or null for silence. */
+/** Where we are: the lobby, a match, the final round, or null for silence. The song is the same; only the volume changes. */
 export function setTrack(t: Track) {
   if (t === track) return;
   track = t;
   fadeMusic();
 }
-const LEVEL: Record<string, number> = { lobby: 0.11, match: 0.06, final: 0.08 };
+const LEVEL: Record<string, number> = { lobby: 0.11, match: 0.07, final: 0.08 };
 function fadeMusic() {
   const a = ac; if (!a || !musicGain) return;
   const target = musicOn && track ? LEVEL[track]! : 0;
@@ -141,19 +143,48 @@ function startMusicLoop() {
   musicGain.gain.value = 0;
   const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
   musicGain.connect(lp).connect(a.destination);
-  nextBeat = a.currentTime + 0.1;
-  loopTimer = setInterval(schedule, 120);
+  loopTimer = setInterval(schedule, 100);
   fadeMusic();
 }
 document.addEventListener('visibilitychange', () => {
   if (!ac) return;
-  if (document.hidden) ac.suspend().catch(() => {}); else ac.resume().catch(() => {});
+  if (document.hidden) ac.suspend().catch(() => {}); else { lastBeat = -1; ac.resume().catch(() => {}); }
 });
 
+// ---------- the shared clock ----------
+// Phones and computers set their clocks from the internet, but some are off by a second or more. The site runs
+// through Cloudflare, whose /cdn-cgi/trace page tells the time in whole seconds. Each reading says "internet time
+// was somewhere in this second while the request was out", so ten readings a tenth of a second apart narrow it
+// down to about the network round trip. If this device's clock already fits, it's left alone; if not, it's moved
+// to the middle of the possible window. Where that page isn't there (the test server), the device clock is used.
+let clockOffset = 0; // add to Date.now() to get internet time
+export const worldNow = () => Date.now() + clockOffset;
+const pause = (ms: number) => new Promise(r => setTimeout(r, ms));
+export async function syncClock() {
+  let lo = -Infinity, hi = Infinity;
+  for (let i = 0; i < 10; i++) {
+    try {
+      const t0 = Date.now();
+      const r = await fetch('/cdn-cgi/trace', { cache: 'no-store' });
+      const txt = await r.text(), t1 = Date.now();
+      const m = /(?:^|\n)ts=(\d+)/.exec(txt);
+      if (!r.ok || !m) return; // not behind Cloudflare: keep the device clock
+      const sec = parseInt(m[1]!, 10) * 1000;
+      // the server read its clock between t0 and t1 (our time), and it showed sec..sec+999 (internet time)
+      lo = Math.max(lo, sec - t1); hi = Math.min(hi, sec + 1000 - t0);
+    } catch { return; }
+    await pause(110);
+  }
+  if (!(lo <= hi)) return; // readings disagree (the network hiccuped): keep what we had
+  clockOffset = lo <= 0 && 0 <= hi ? 0 : Math.round((lo + hi) / 2); // fits already: leave it; otherwise the middle of what's possible
+  lastBeat = -1;
+}
+if (location.protocol.startsWith('http')) { syncClock(); setInterval(syncClock, 10 * 60 * 1000); }
+
 const midi = (n: number) => 440 * 2 ** ((n - 69) / 12);
-// chords as MIDI notes; lobby is bright (C Am F G), the match loop darker (Am F C G)
-const LOBBY = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]];
-const MATCH = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]];
+// 8 bars: bright (C Am F G), then darker (Am F C G); 88 beats a minute, played in eighth notes
+const BARS = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62], [57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]];
+const BPM = 88, STEP_MS = 60000 / BPM / 2, LOOP = BARS.length * 8;
 function note(freq: number, at: number, dur: number, vol: number, type: OscillatorType, attack = 0.02) {
   const a = ac!; if (!musicGain) return;
   const o = a.createOscillator(), g = a.createGain();
@@ -164,38 +195,38 @@ function note(freq: number, at: number, dur: number, vol: number, type: Oscillat
   o.connect(g).connect(musicGain);
   o.start(at); o.stop(at + dur + 0.05);
 }
+function hat(at: number) {
+  const a = ac!;
+  if (!noiseBuf) {
+    noiseBuf = a.createBuffer(1, a.sampleRate, a.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1;
+  }
+  const src = a.createBufferSource(); src.buffer = noiseBuf;
+  const f = a.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000;
+  const g = a.createGain(); g.gain.setValueAtTime(0.018, at); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.05);
+  src.connect(f).connect(g).connect(musicGain!); src.start(at); src.stop(at + 0.06);
+}
+/** Plays eighth note number n of the song (counted from 1 Jan 1970, so every device agrees) at audio time t. */
+function playBeat(n: number, t: number) {
+  const i = n % LOOP, bar = Math.floor(i / 8), chord = BARS[bar]!, step = STEP_MS / 1000;
+  if (i % 8 === 0) {
+    // a soft pad for the whole bar, and the bass note
+    for (const m of chord) note(midi(m), t, step * 8.2, 0.05, 'triangle', 0.4);
+    note(midi(chord[0]! - 12), t, step * 3, 0.09, 'sine', 0.01);
+  }
+  const arp = [0, 1, 2, 1, 2, 0, 1, 2];
+  note(midi(chord[arp[i % 8]!]! + 12), t, step * 1.6, 0.04, 'sine'); // a gentle arpeggio over the chord
+  if (i % 2 === 1) hat(t); // a quiet hi-hat on the off-beats
+}
 function schedule() {
   const a = ac; if (!a || !musicGain || a.state !== 'running') return;
-  if (!musicOn || !track) { nextBeat = a.currentTime + 0.1; return; }
-  const bpm = track === 'lobby' ? 84 : track === 'match' ? 96 : 104;
-  const step = 60 / bpm / 2; // eighth notes
-  while (nextBeat < a.currentTime + 0.5) {
-    const t = nextBeat, i = beatN % 32, bar = Math.floor(beatN / 8) % 4;
-    const chord = (track === 'lobby' ? LOBBY : MATCH)[bar]!;
-    if (i % 8 === 0) {
-      // a soft pad for the whole bar, and the bass note
-      for (const n of chord) note(midi(n), t, step * 8.2, 0.05, 'triangle', 0.4);
-      note(midi(chord[0]! - 12), t, step * 3, 0.09, 'sine', 0.01);
-    }
-    // a gentle arpeggio over the chord
-    const arp = [0, 1, 2, 1, 2, 0, 1, 2];
-    if (track === 'lobby' || i % 2 === 0) note(midi(chord[arp[i % 8]!]! + 12), t, step * 1.6, track === 'lobby' ? 0.045 : 0.03, 'sine');
-    if (track === 'final' && i % 2 === 0) note(midi(chord[0]! - 12), t, step * 0.9, 0.07, 'sine', 0.005);
-    if (track !== 'lobby' && i % 2 === 1) {
-      // a quiet hi-hat on the off-beats during a match
-      if (!noiseBuf) {
-        noiseBuf = a.createBuffer(1, a.sampleRate, a.sampleRate);
-        const d = noiseBuf.getChannelData(0);
-        for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1;
-      }
-      {
-        const src = a.createBufferSource(); src.buffer = noiseBuf;
-        const f = a.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000;
-        const g = a.createGain(); g.gain.setValueAtTime(0.02, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
-        src.connect(f).connect(g).connect(musicGain); src.start(t); src.stop(t + 0.06);
-      }
-    }
-    nextBeat += step; beatN++;
-  }
+  if (!musicOn || !track) { lastBeat = -1; return; }
+  // match the audio clock to internet time; the sound reaches the speaker outputLatency later, so start that much early
+  const now = worldNow(), latency = (a.outputLatency || 0) + (a.baseLatency || 0);
+  const toAudio = (ms: number) => a.currentTime + (ms - now) / 1000 - latency;
+  const first = Math.ceil((now + 30) / STEP_MS), last = Math.floor((now + 400) / STEP_MS);
+  for (let n = Math.max(first, lastBeat + 1); n <= last; n++) { playBeat(n, toAudio(n * STEP_MS)); lastBeat = n; }
 }
+if (import.meta.env.DEV) (window as any).__music = () => ({ offset: clockOffset, beat: lastBeat, bar: Math.floor((lastBeat % LOOP) / 8), msIntoStep: worldNow() % STEP_MS });
 void loopTimer;

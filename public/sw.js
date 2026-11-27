@@ -34,7 +34,7 @@ self.addEventListener('fetch', e => {
       .catch(() => caches.match(isGame ? './' : req.url).then(hit => hit || caches.match('./'))));
     return;
   }
-  if (url.pathname.endsWith('/version.json')) return; // always from the network
+  if (url.pathname.endsWith('/version.json') || url.pathname.startsWith('/cdn-cgi/')) return; // always from the network (the music clock reads the time there)
   if (url.pathname.includes('/assets/')) { e.respondWith(cacheFirst(req)); return; }
   e.respondWith(caches.match(req).then(hit => {
     const net = fetch(req).then(res => { save(req, res.clone()); return res; }).catch(() => hit);

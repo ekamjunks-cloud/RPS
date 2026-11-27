@@ -95,7 +95,7 @@
     <div class="noticeBar evBar hide" id="eventBar"></div>
     <div class="noticeBar banBar hide" id="banBar"></div>
     <div class="inviteBar hide" id="inviteBar"></div>
-    <div class="guestBar hide" id="guestCard"><span id="guestText"></span><button class="btn light sm" id="btnGoogle" type="button">Continue with Google</button></div>
+    <div class="guestBar hide" id="guestCard"><span id="guestText"></span><span class="gbBtns"><button class="btn light sm" id="btnGoogle" type="button">Continue with Google</button><button class="link gbEmail" id="btnEmailIn" type="button">or use email</button></span></div>
 
     <div class="lbMain">
       <div class="lbSpacer"></div>
@@ -217,6 +217,7 @@
           <p>Drag cards to put them in any order. You can't change which cards you got.</p>
           <div class="pt" id="prepT">20</div>
           <div class="st"><span class="chip" id="chipYou">You</span><span class="chip" id="chipOpp">Opp</span></div>
+          <button class="btn action go prepReady" id="prepReady" type="button">Ready</button>
         </div>
       </div>
 
@@ -251,7 +252,7 @@
   <div class="csList" id="chatList"></div>
   <div class="csEmoji" id="chatEmoji"></div>
   <div class="csPhrases" id="chatPhrases"></div>
-  <div class="csFoot"><span>One message every 2 seconds</span><button class="link sm" id="chatEdit" type="button">Edit in Locker › Chat</button></div>
+  <div class="csFoot"><span id="chatGap">One message every 3 seconds</span><button class="link sm" id="chatEdit" type="button">Edit in Locker › Chat</button></div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="achPop" id="achPop" role="status" aria-live="polite"></div>
@@ -275,26 +276,94 @@
     <h2 id="endTitle"></h2>
     <div class="endScore"><div><b id="endYou">0</b><small id="endNameYou">You</small></div><i>–</i><div><b id="endOpp">0</b><button class="linkName" id="endNameOpp" type="button">Opp</button></div></div>
     <div class="endChips" id="endChips"></div>
+    <!-- the opponent: avatar, name, title and rank; tap for their profile; Add friend on the card -->
+    <div class="endOpp" id="endOpp">
+      <button class="eoMain" id="endOppOpen" type="button" aria-label="See your opponent's profile"><span id="endOppAv"></span><span class="eoWho"><b id="endOppName"></b><small id="endOppSub"></small></span></button>
+      <button class="eoAdd" id="btnAddFriend" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.4" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6 M19 7v6 M16 10h6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span id="addFriendTx">Add</span></button>
+    </div>
     <div class="rmNote" id="rmNote"></div>
-    <button class="btn primary" id="btnRematch" type="button">Rematch</button>
-    <button class="btn ghost" id="btnShareResult" type="button">Share result</button>
-    <div class="endLinks">
-      <button class="link" id="btnAgain" type="button">New opponent</button>
-      <button class="link hide" id="btnAddFriend" type="button">Add friend</button>
-      <button class="link" id="endChat" type="button">Chat</button>
-      <button class="link hide" id="btnReport" type="button">Report</button>
-      <button class="link" id="btnBack" type="button">Back to lobby</button>
+    <div class="endMain">
+      <button class="btn primary" id="btnAgain" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15 15l5 5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg><span>Find next<br>opponent</span></button>
+      <button class="btn gold" id="btnRematch" type="button">Rematch</button>
+    </div>
+    <div class="endBottom">
+      <button class="link endHome" id="btnBack" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7 M6 9.5V20h12V9.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Back to lobby<span class="endAuto" id="endAuto"></span></button>
+      <span class="endIcons">
+        <button class="eIc" id="btnShareResult" type="button" aria-label="Share result" title="Share result"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3.5 M7.5 8 12 3.5 16.5 8 M5 12v7.5h14V12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="eIc hide" id="btnReport" type="button" aria-label="Report" title="Report"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4 M5 4h12l-2 4 2 4H5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </span>
     </div>
   </div>
 </div>
 
-<div class="overlay hide" id="shareModal">
-  <div class="modal shareModal">
-    <h2>Share your result</h2>
-    <div class="shareImgWrap"><img id="shareImg" alt="Your match result card"><div class="shareLoading" id="shareLoading">Making your card…</div></div>
-    <button class="btn primary" id="shareGo">Share</button>
-    <button class="btn ghost" id="shareSave">Save image</button>
-    <button class="link" id="shareClose">Close</button>
+<!-- daily challenge: a short sheet before you start (board 34, look A1) -->
+<!-- account: Google or email and password (board 36) -->
+<div class="overlay hide dailyOv" id="acctSheet">
+  <div class="dSheet acSheet" role="dialog" aria-modal="true" aria-label="Save your progress">
+    <div class="dsGrab" aria-hidden="true"></div>
+    <div class="acView" id="acChoose">
+      <h2 class="acH">Save your progress</h2>
+      <p class="acSub">Play on any device, pick your own name and climb the ranked ladder.</p>
+      <button class="acGoogle" id="acGoogle" type="button"><svg class="gG" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google</button>
+      <div class="or">or</div>
+      <button class="acEmail" id="acEmail" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="m4 7.5 8 6 8-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Continue with email</button>
+      <div class="acNote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 19.5 6v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Your coins, level and items come with you. Nothing is posted anywhere.</span></div>
+      <button class="link acLater" type="button" data-ac-close>Not now</button>
+    </div>
+    <form class="acView hide" id="acForm" novalidate>
+      <div class="acTabs" role="tablist"><button type="button" role="tab" data-ac-tab="in">Sign in</button><button type="button" role="tab" data-ac-tab="new">Create account</button></div>
+      <label class="acFld"><span>Email</span><input id="acMail" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" required maxlength="120"></label>
+      <label class="acFld"><span>Password</span><span class="acPw"><input id="acPass" type="password" autocomplete="current-password" required minlength="8" maxlength="100"><button class="acEye" id="acEye" type="button" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg></button></span><small class="acHint" id="acHint"></small></label>
+      <div class="acErr" id="acErr" role="alert"></div>
+      <button class="btn primary" id="acGo" type="submit">Sign in</button>
+      <button class="link acLink" id="acForgot" type="button">Forgot password?</button>
+      <button class="link acLater" id="acBack" type="button">Back</button>
+    </form>
+    <div class="acView hide" id="acSent">
+      <span class="acEnv"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="3" fill="#fff"/><path d="m4 7.5 8 6 8-6" fill="none" stroke="#2a83f0" stroke-width="2" stroke-linejoin="round"/></svg></span>
+      <h2 class="acH">Check your inbox</h2>
+      <p class="acSub">We sent a link to <b id="acSentTo"></b>.<br>Open it to choose a new password, then come back and sign in.</p>
+      <button class="btn primary" id="acSentBack" type="button">Back to sign in</button>
+      <button class="link acLink" id="acResend" type="button">Didn't get it? Send again</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hide dailyOv" id="dailySheet">
+  <div class="dSheet" role="dialog" aria-modal="true" aria-labelledby="dsTitle">
+    <div class="dsGrab" aria-hidden="true"></div>
+    <div class="dsHead">
+      <span class="dsCal" data-icon="calendar"></span>
+      <span class="dsWho"><b id="dsTitle">Daily challenge</b><small id="dsNext"></small></span>
+      <span class="dsStreak" id="dsStreak"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c1 4.2 6 5.6 6 11a6 6 0 0 1-12 0c0-3.2 2-4.6 2.6-7.4 1.3 1.3 2.2 2.6 2.8 4.4C13.5 8.6 12.8 5.2 12 2.5Z" fill="currentColor"/></svg><span id="dsStreakN"></span></span>
+    </div>
+    <div class="dsPills" id="dsPills"><span class="dsPill c1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="9" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2.2"/><rect x="12" y="6" width="9" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>Same hand for everyone</span><span class="dsPill c2"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M10 9l2.5-1.5V16.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>One try today</span></div>
+    <div class="dsRew" id="dsRew"></div>
+    <!-- after today's try: the result medal and the countdown to the next one (board 35, R1) -->
+    <div class="dsMedal hide" id="dsMedal"></div>
+    <div class="dsNextBox hide" id="dsNextBox"></div>
+    <div class="dsMore hide" id="dsMore"></div>
+    <button class="btn gold big" id="dsStart" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5Z" fill="currentColor"/></svg>Start</button>
+    <div class="dsFoot" id="dsFoot"><button class="link" id="dsHow" type="button" aria-expanded="false">How it works</button><button class="link" id="dsClose" type="button">Not now</button></div>
+  </div>
+</div>
+
+<div class="overlay hide shareOv" id="shareModal" role="dialog" aria-modal="true" aria-label="Share your result">
+  <div class="shareScr">
+    <div class="shTop">
+      <button class="iconBtn" id="shareClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+      <div class="shSeg" role="group" aria-label="Image size"><button type="button" data-fmt="story" class="on" aria-pressed="true">Story</button><button type="button" data-fmt="square" aria-pressed="false">Square</button></div>
+      <span class="shSp"></span>
+    </div>
+    <div class="shareImgWrap" id="shareImgWrap"><img id="shareImg" alt="Your match result card"><div class="shareLoading" id="shareLoading">Making your card…</div></div>
+    <div class="shActs">
+      <button class="btn primary" id="shareGo" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3.5 M7.5 8 12 3.5 16.5 8 M5 12v7.5h14V12" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Share</button>
+      <div class="shMinis">
+        <button class="shMini" id="shareSave" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5V15 M7.5 10.5 12 15l4.5-4.5 M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Save image</button>
+        <button class="shMini" id="shareCopy" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></svg><span>Copy link</span></button>
+        <button class="shMini" id="shareChallenge" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 4H20v5.5L10 19.5 4.5 14Z M7 17l-3 3 M13 6.5l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Challenge</button>
+      </div>
+    </div>
   </div>
 </div>
 

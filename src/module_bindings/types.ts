@@ -285,6 +285,7 @@ export const ChatView = __t.object("ChatView", {
   mine: __t.bool(),
   kind: __t.string(),
   body: __t.string(),
+  gameId: __t.u64(),
 });
 export type ChatView = __Infer<typeof ChatView>;
 

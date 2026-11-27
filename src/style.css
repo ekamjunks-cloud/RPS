@@ -418,7 +418,6 @@ kbd{font-family:var(--body);font-size:10px;font-weight:700;background:rgba(255,2
 .endChips:empty{display:none}
 .ec{font-size:13px;font-weight:700;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,.07);color:var(--muted)}
 .ec .up{color:var(--you)}.ec .down{color:var(--opp)}
-.endModal #btnBack{align-self:center}
 .rmNote{font-size:14px;font-weight:700;color:var(--muted);min-height:0}
 .rmNote:empty{display:none}
 .rmNote.hot{color:var(--gold);animation:beat 1.2s ease-in-out infinite}
@@ -522,7 +521,6 @@ body.chatOpen .chatSheet{transform:none;visibility:visible;transition:transform 
 .csPhrases{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
 .phr{flex:0 0 auto;font-size:13px;font-weight:700;padding:7px 11px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.06);color:var(--text);cursor:pointer;white-space:nowrap}
 .phr:active{background:rgba(255,255,255,.16)}
-.endLinks{display:flex;justify-content:center;gap:6px}
 .chatBtn>span{display:block;width:100%;height:100%}
 
 /* invite link on the room wait screen */
@@ -532,13 +530,9 @@ body.chatOpen .chatSheet{transform:none;visibility:visible;transition:transform 
 
 /* share result */
 .btn.shareBtn{font-size:16px;padding:12px}
-.shareModal{gap:10px;max-width:360px}
-.shareModal h2{font-size:24px}
-.shareImgWrap{position:relative;width:min(220px,56vw);aspect-ratio:9/16;margin:0 auto;border-radius:16px;overflow:hidden;background:rgba(8,6,28,.5);box-shadow:0 12px 30px rgba(0,0,0,.5)}
 .shareImgWrap img{width:100%;height:100%;display:block;object-fit:cover}
 .shareImgWrap img:not([src]){visibility:hidden}
 .shareLoading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--muted);padding:10px}
-@media (max-height:700px){.shareImgWrap{width:min(170px,46vw)}}
 /* windows never get cut off on short phones */
 .overlay{overflow-y:auto}
 .overlay>.modal{margin:auto}
@@ -1224,7 +1218,6 @@ body.finalRound .gRound small{color:var(--gold)}
 .ec .coins{display:inline-flex;align-items:center;gap:4px;color:var(--gold)}
 .ec .coins .coin{width:14px;height:14px}
 .ec .xp{color:var(--you)}
-.endLinks{display:flex;flex-wrap:wrap;justify-content:center;gap:2px}
 .leaveNote{font-size:14px;color:#ffd1dc;line-height:1.45;padding:10px 12px;border-radius:12px;background:rgba(255,90,122,.1)}
 #confirmLeave .btn.danger{font-family:var(--body);font-weight:800;font-size:15px;padding:11px}
 
@@ -1688,3 +1681,179 @@ html,body{overflow-x:hidden}
 .achChip .achSvg{display:inline-block}
 .apIc .achSvg{width:44px;height:44px}
 .ach{grid-template-columns:44px 1fr}
+
+/* ---------- end of match: opponent card, two main buttons, small row (v2.6) ---------- */
+.endOpp{display:flex;align-items:center;gap:8px;background:rgba(8,6,28,.45);border:1px solid var(--line2);border-radius:16px;padding:8px 8px 8px 10px;text-align:left}
+.eoMain{flex:1;min-width:0;display:flex;align-items:center;gap:11px;background:none;border:0;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:12px}
+.eoMain:disabled{cursor:default}
+.eoMain:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.eoMain>span:first-child{flex:0 0 auto;display:flex}
+.eoWho{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.eoWho b{font-size:17px;font-weight:900;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eoMain:not(.bot) .eoWho b::after{content:"›";margin-left:6px;color:var(--dim);font-weight:700}
+.eoWho small{display:flex;align-items:center;flex-wrap:wrap;gap:4px 7px;font-size:12px;font-weight:700;color:var(--muted);min-width:0}
+.eoRank{display:inline-flex;align-items:center;white-space:nowrap}
+.eoWho .ttl{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.eoAdd{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:56px;height:52px;border-radius:14px;border:0;background:linear-gradient(180deg,#8b7bff,#6c5ce7);box-shadow:0 3px 0 #3f2fa8;color:#fff;font:800 11px var(--body);cursor:pointer;padding:4px 8px}
+.eoAdd svg{width:22px;height:22px}
+.eoAdd:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 #3f2fa8}
+.eoAdd.hot{background:linear-gradient(180deg,#ffd75e,#ffb21f);box-shadow:0 3px 0 #b06c00;color:#3a2100;animation:breathe 1.4s ease-in-out infinite}
+.eoAdd:disabled{background:rgba(255,255,255,.07);box-shadow:none;color:var(--muted);cursor:default}
+.eoAdd.done{color:var(--you)}
+.eoAdd:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.endMain{display:flex;gap:10px}
+.endMain .btn{flex:1;min-width:0;width:auto;padding:13px 10px;font-size:17px;line-height:1.1;letter-spacing:.4px}
+.endMain .btn span{text-align:left}
+.endMain .btn svg{width:20px;height:20px}
+.endModal.noMain .endMain{display:none}
+.endBottom{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--line2);padding-top:10px}
+.endHome{display:inline-flex;align-items:center;gap:7px;font-size:15px;font-weight:800;color:var(--text);padding:9px 12px;border-radius:12px;background:rgba(255,255,255,.07)}
+.endHome svg{width:18px;height:18px}
+.endModal.noMain .endHome{background:linear-gradient(180deg,#55f0b2,#22c785);color:#05301f;box-shadow:0 4px 0 #0d7d52}
+.endIcons{display:flex;gap:6px}
+.eIc{width:40px;height:40px;border-radius:12px;border:1px solid var(--line2);background:rgba(255,255,255,.05);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:9px}
+.eIc svg{width:20px;height:20px}
+.eIc:hover{color:var(--text);background:rgba(255,255,255,.1)}
+.eIc:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+#btnReport:hover{color:var(--opp)}
+@media (max-height:720px){.endOpp{padding:6px 6px 6px 8px}.eoAdd{height:46px}.endMain .btn{padding:11px 8px}.endBottom{padding-top:8px}}
+
+/* chat: one message every 3 seconds */
+body.chatCool .emo,body.chatCool .phr{opacity:.4;pointer-events:none;filter:saturate(.4)}
+#btnChat.cool::after{content:"";position:absolute;left:10px;right:10px;bottom:4px;height:3px;border-radius:2px;background:var(--gold);transform-origin:left;animation:chatCool 3s linear forwards}
+@keyframes chatCool{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+#chatGap{transition:color .2s}
+body.chatCool #chatGap{color:var(--gold)}
+/* end pop-up: the auto-return countdown on Back to lobby */
+.endAuto{min-width:22px;height:22px;margin-left:2px;padding:0 6px;border-radius:999px;background:rgba(255,255,255,.12);color:var(--muted);font:800 12px var(--body);display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.endAuto:empty{display:none}
+.endModal.noMain .endAuto{background:rgba(5,48,31,.18);color:#05301f}
+
+/* ---------- share your result: full screen, the card big in the middle (v2.6) ---------- */
+.shareOv{padding:0;background:rgba(6,4,22,.94);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.shareScr{width:100%;max-width:460px;height:100%;max-height:100dvh;margin:0 auto;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:14px;padding:max(14px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+.shTop{width:100%;display:flex;align-items:center;justify-content:space-between}
+.shTop .iconBtn svg{width:18px;height:18px}
+.shSp{width:40px}
+.shSeg{display:flex;padding:3px;border-radius:12px;background:rgba(255,255,255,.08)}
+.shSeg button{border:0;background:none;color:var(--muted);font:800 13px var(--body);padding:8px 16px;border-radius:9px;cursor:pointer}
+.shSeg button.on{background:#f5f3ff;color:#15122f}
+.shSeg button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.shareImgWrap{position:relative;flex:1 1 auto;min-height:0;width:100%;display:flex;align-items:center;justify-content:center}
+.shareImgWrap img{display:block;max-width:100%;max-height:100%;aspect-ratio:9/16;height:100%;width:auto;object-fit:contain;border-radius:18px;box-shadow:0 18px 40px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.1)}
+.shareImgWrap.sq img{aspect-ratio:1/1;height:auto;width:100%;max-width:min(100%,420px)}
+.shActs{width:100%;display:flex;flex-direction:column;gap:10px;flex:0 0 auto}
+.shMinis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.shMini{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px;border-radius:14px;border:1px solid var(--line2);background:rgba(255,255,255,.06);color:var(--text);font:800 12px var(--body);cursor:pointer}
+.shMini svg{width:21px;height:21px}
+.shMini:hover:not(:disabled){background:rgba(255,255,255,.12)}
+.shMini:disabled{opacity:.5;cursor:default}
+.shMini:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+
+/* Ready on the table during "Arrange your hand"; the bottom slot keeps its place but is empty */
+.prep .btn.prepReady{width:auto;min-width:210px;margin-top:6px;padding:13px 30px;font-size:20px}
+.prep .btn.prepReady:disabled{filter:none;opacity:.85;font-family:var(--body);font-weight:800;font-size:15px}
+#readyBtn.prepHide{visibility:hidden}
+@media (max-height:740px){.prep .btn.prepReady{margin-top:2px;padding:10px 24px;font-size:18px;min-width:180px}}
+/* the unread counts on Chat and Turns sit inside the button, next to the label, so nothing covers them */
+.gBar .gBtn .badge{position:static;margin-left:1px;box-shadow:none;flex:0 0 auto}
+
+/* ---------- daily challenge sheet (board 34, A1) ---------- */
+.dailyOv{padding:0;align-items:flex-end}
+.dSheet{width:100%;max-width:480px;margin:0 auto;box-sizing:border-box;border-radius:28px 28px 0 0;background:linear-gradient(180deg,#2c2574,#1a1548);border-top:1px solid rgba(255,255,255,.18);box-shadow:0 -20px 50px rgba(0,0,0,.5);padding:12px 18px max(20px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px;animation:sheetIn .3s cubic-bezier(.2,1.2,.4,1)}
+.dsGrab{width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.25);margin:0 auto}
+.dsHead{display:flex;align-items:center;gap:12px}
+.dsCal{width:52px;height:52px;border-radius:16px;background:linear-gradient(160deg,#ffd75e,#f0602a);box-shadow:0 4px 0 #9a3a10;display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:#3a1500;padding:12px;box-sizing:border-box}
+.dsCal svg{width:100%;height:100%}
+.dsWho{flex:1;min-width:0;display:flex;flex-direction:column}
+.dsWho b{font-family:var(--display);font-weight:400;font-size:24px;line-height:1.05}
+.dsWho small{font-size:12.5px;font-weight:700;color:var(--muted)}
+.dsStreak{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:800;color:var(--gold);white-space:nowrap}
+.dsStreak svg{width:15px;height:15px}
+.dsPills{display:flex;gap:8px;flex-wrap:wrap}
+.dsPill{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;background:rgba(8,6,28,.45);font-size:13px;font-weight:800}
+.dsPill svg{width:16px;height:16px}
+.dsPill.c1{color:#6fe0ff}.dsPill.c2{color:var(--gold)}
+.dsRew{display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;font-weight:800;color:#d9d4ff}
+.dsRew b{display:inline-flex;align-items:center;gap:4px;font-family:var(--display);font-weight:400;font-size:19px;color:var(--gold)}
+.dsRew .coin{width:16px;height:16px}
+.dsDone{font-family:var(--display);font-weight:400;font-size:19px;color:#e6defe}
+.dsDone.win{color:var(--you)}.dsDone.loss{color:var(--opp)}.dsDone.draw{color:var(--gold)}
+.dsMore{font-size:13px;font-weight:600;line-height:1.5;color:#d9d4ff;background:rgba(8,6,28,.4);border-radius:14px;padding:10px 12px;margin-top:-4px}
+.dSheet #dsStart svg{width:18px;height:18px}
+.dSheet #dsStart:disabled{font-family:var(--body);font-weight:800;font-size:16px}
+.dsFoot{display:flex;justify-content:space-between;margin-top:-6px}
+.dsFoot .link{font-weight:800}
+#dsHow{color:#d9d4ff;text-decoration:underline;text-decoration-color:rgba(255,255,255,.3);text-underline-offset:3px}
+
+/* the Google "G" on sign-in buttons */
+.gG{width:18px;height:18px;flex:0 0 auto}
+#btnGoogle{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.gLine{display:inline-flex;align-items:center;gap:8px}
+.gRow .gG{width:17px;height:17px;background:#fff;border-radius:50%;padding:3px;box-sizing:content-box}
+
+/* daily result medal (board 35, R1) */
+.dsMedal{position:relative;border-radius:22px;padding:18px 16px 14px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;
+  background:radial-gradient(circle at 50% 0%,var(--mg),transparent 65%),linear-gradient(180deg,#3a2f8a,#241d62);border:1.5px solid var(--mb);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 10px 24px rgba(0,0,0,.35);animation:screenIn .35s ease}
+.dsMedal.win{--mg:rgba(255,200,61,.35);--mb:rgba(255,200,61,.5)}
+.dsMedal.loss{--mg:rgba(255,90,122,.3);--mb:rgba(255,90,122,.45)}
+.dsMedal.draw{--mg:rgba(167,139,250,.3);--mb:rgba(167,139,250,.45)}
+.dmBadge{width:62px;height:62px;border-radius:19px;padding:12px;box-sizing:border-box;color:#fff;display:flex;align-items:center;justify-content:center;animation:badge .7s cubic-bezier(.2,1.6,.4,1) .1s backwards;
+  background:linear-gradient(160deg,#6a5aa8,#3a2f75);box-shadow:inset 0 0 0 3px rgba(255,255,255,.25),0 5px 0 #1d1745}
+.dmBadge svg{width:100%;height:100%}
+.win .dmBadge{background:linear-gradient(160deg,#ffe27a,#f2a900);color:#fff8db;box-shadow:inset 0 0 0 3px rgba(255,255,255,.4),0 5px 0 #9a6000,0 0 30px rgba(255,200,61,.55)}
+.loss .dmBadge{background:linear-gradient(160deg,#ff7a93,#b8203f);box-shadow:inset 0 0 0 3px rgba(255,255,255,.3),0 5px 0 #6e0f24}
+.dmTitle{font-family:var(--display);font-weight:400;font-size:34px;line-height:1;color:#e6defe;text-shadow:0 4px 0 rgba(0,0,0,.3)}
+.win .dmTitle{color:var(--gold);text-shadow:0 4px 0 var(--goldD),0 0 24px rgba(255,200,61,.35)}
+.loss .dmTitle{color:var(--opp);text-shadow:0 4px 0 var(--oppD)}
+.dmVs{font-size:13px;font-weight:800;color:#d9d4ff}
+.dmVs b{color:var(--you);font-weight:900}.dmVs i{font-style:normal;color:var(--opp);font-weight:900}
+.dmChips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.dmChip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;padding:5px 10px;border-radius:999px;background:rgba(8,6,28,.5);color:#d9d4ff}
+.dmChip.g{color:var(--gold)}
+.dmChip .coin{width:14px;height:14px}
+.dsNextBox{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:16px;background:rgba(8,6,28,.45)}
+.dsNextBox b{display:block;font-family:var(--display);font-weight:400;font-size:18px}
+.dsNextBox small{font-size:11.5px;font-weight:700;color:var(--muted)}
+.dmRing{width:44px;height:44px;flex:0 0 auto}
+
+/* ---------- account sheet: Google or email (board 36) ---------- */
+.acSheet{gap:0}
+.acView{display:flex;flex-direction:column;gap:12px}
+.acView.hide{display:none}
+.acH{font-size:26px;text-align:center;margin-top:4px}
+.acSub{margin:-6px 0 2px;text-align:center;font-size:13px;font-weight:600;color:var(--muted);line-height:1.45}
+.acSub b{color:var(--text);overflow-wrap:anywhere}
+.acGoogle{display:flex;align-items:center;justify-content:center;gap:10px;padding:14px;border-radius:16px;border:0;background:#fff;color:#1f1f1f;font:800 16px var(--body);box-shadow:0 4px 0 #a9a4c8;cursor:pointer}
+.acGoogle .gG{width:20px;height:20px}
+.acGoogle:active{transform:translateY(3px);box-shadow:0 1px 0 #a9a4c8}
+.acEmail{display:flex;align-items:center;justify-content:center;gap:10px;padding:13px;border-radius:16px;border:2px solid rgba(255,255,255,.22);background:none;color:var(--text);font:800 16px var(--body);cursor:pointer}
+.acEmail svg{width:20px;height:20px}
+.acEmail:hover{background:rgba(255,255,255,.06)}
+.acNote{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:14px;background:rgba(62,230,160,.1);font-size:12px;font-weight:700;color:#bff5dc;line-height:1.4}
+.acNote svg{width:16px;height:16px;flex:0 0 auto;margin-top:1px}
+.acLater{align-self:center;color:var(--muted);font-weight:800}
+.acTabs{display:flex;padding:3px;border-radius:12px;background:rgba(255,255,255,.08)}
+.acTabs button{flex:1;border:0;background:none;padding:9px;border-radius:9px;font:800 13px var(--body);color:var(--muted);cursor:pointer}
+.acTabs button.on{background:#f5f3ff;color:#15122f}
+.acFld{display:flex;flex-direction:column;gap:5px}
+.acFld>span:first-child{font-size:11.5px;font-weight:800;color:var(--muted);letter-spacing:.5px;text-transform:uppercase}
+.acFld input{width:100%;box-sizing:border-box;padding:13px 14px;border-radius:14px;background:rgba(8,6,28,.55);border:1.5px solid rgba(255,255,255,.14);font:600 16px var(--body);color:var(--text);text-align:left;letter-spacing:0;text-transform:none}
+.acFld input:focus{outline:none;border-color:#6fe0ff;box-shadow:0 0 0 3px rgba(111,224,255,.18)}
+.acPw{position:relative;display:block}
+.acPw input{padding-right:46px}
+.acEye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;border:0;background:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:10px}
+.acEye svg{width:19px;height:19px}
+.acEye[aria-pressed="true"]{color:#6fe0ff}
+.acHint{font-size:11.5px;font-weight:700;color:var(--muted);min-height:0}
+.acHint.ok{color:var(--you)}
+.acHint:empty{display:none}
+.acErr{font-size:13px;font-weight:700;color:#ffb3c1;background:rgba(255,90,122,.12);border-radius:12px;padding:9px 12px;line-height:1.4}
+.acErr:empty{display:none}
+.acLink{align-self:center;color:#d9d4ff;font-weight:800;text-decoration:underline;text-decoration-color:rgba(255,255,255,.3);text-underline-offset:3px}
+.acEnv{width:84px;height:84px;margin:8px auto 0;border-radius:26px;background:linear-gradient(160deg,#6fe0ff,#2a83f0);display:flex;align-items:center;justify-content:center;box-shadow:0 5px 0 #154a9a,0 0 30px rgba(111,224,255,.4)}
+.acEnv svg{width:46px;height:46px}
+.gbBtns{flex:0 0 auto!important;display:flex;flex-direction:column;align-items:center;gap:2px}
+.gbEmail{font-size:12px;padding:2px 6px;color:#bfefff;text-decoration:underline;text-decoration-color:rgba(255,255,255,.3);text-underline-offset:3px}
+.acSheet .dsGrab{margin-bottom:12px}

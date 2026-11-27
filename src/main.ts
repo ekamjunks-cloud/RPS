@@ -6,7 +6,7 @@ import { DbConnection, tables } from './module_bindings';
 import { KINDS, ICON, face, mini, TROPHY, SKULL, SHAKE, LOCK, CHAT, GEAR, EXIT, LIST, LOCKER, BAG, PLAY, FLAG, STATS, CALENDAR } from './art';
 import { sfx, unlock, isMuted, setMuted, isMusicOn, setMusicOn, setTrack } from './sfx';
 import { burstAt, vibrate, winEffect, setReducedMotion, setVibration } from './fx';
-import { drawResultCard } from './card';
+import { drawResultCard, type CardFormat } from './card';
 import { tierOf, nextTier, tierBadge, TIERS, ACHIEVEMENTS, achievementOf, achIcon, today, msToNextDay, msToSeasonEnd, seasonName, shortTime } from './ranks';
 import { addSprite } from './sprite';
 import {
@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.5';
+const VERSION = '2.6';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = 'support@rps10.online';
@@ -110,7 +110,7 @@ document.body.classList.toggle('calm', PREF.motion());
 addEventListener('pointerdown', unlock, { capture: true });
 addEventListener('keydown', unlock, { capture: true });
 // a soft click on every button
-document.addEventListener('click', e => { const b = (e.target as HTMLElement).closest('button'); if (b && !b.disabled && !b.matches('.card, #readyBtn, .emo')) sfx.tap(); });
+document.addEventListener('click', e => { const b = (e.target as HTMLElement).closest('button'); if (b && !b.disabled && !b.matches('.card, #readyBtn, #prepReady, .emo')) sfx.tap(); });
 
 // ---------- talking to the server ----------
 /** Calls a server reducer. Refusals ("Room not found", ...) are shown to the player. */
@@ -138,7 +138,7 @@ function showError(msg: string) {
 // Google sign-in (Firebase) loads in the background; guests never wait for it.
 type AuthModule = typeof import('./auth');
 const authReady: Promise<AuthModule | null> = ACCOUNTS ? import('./auth').catch(() => null) : Promise.resolve(null);
-let google: { name: string; email: string; photo: string } | null = null; // set while signed in with Google
+let google: { name: string; email: string; photo: string; provider?: string } | null = null; // set while signed in (Google or email)
 let pendingTransfer: string | null = null; // one-time code that moves guest progress to the Google account
 let namePrompted = false;
 
@@ -192,7 +192,7 @@ async function connect() {
         // the server refused the Google login: carry on as a guest and say so
         google = null; store.set(GOOGLE_KEY, null);
         authReady.then(a => a && a.signOutUser()).catch(() => {});
-        notice = 'Google sign-in was not accepted by the game server. You are playing as a guest.';
+        notice = 'Your sign-in was not accepted by the game server. You are playing as a guest.';
         connect();
       } else if (saved && !triedFreshToken) {
         // the saved guest login was rejected (for example the database was reset): start as a new guest
@@ -378,6 +378,8 @@ function closeModals() {
   document.querySelectorAll('.sheetOv').forEach(el => el.classList.add('hide'));
 }
 
+/** Google's own four-colour "G", as their sign-in buttons use (it tells players the button really is Google). */
+const GOOGLE_G = '<svg class="gG" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
 /** Guests sign in with Google to get an account. Their progress moves across with a one-time code. */
 async function googleSignIn() {
   const auth = await authReady;
@@ -395,15 +397,117 @@ async function googleSignIn() {
     else if (!code.includes('popup-closed') && !code.includes('cancelled')) homeMsg(`Google sign-in failed (${code || 'unknown error'}). Try again.`);
     return;
   }
+  await finishSignIn(profile, guest);
+}
+/** After Google or email sign-in: pick up the guest's one-time code (their progress moves across), then reconnect as the account. */
+async function finishSignIn(profile: { name: string; email: string; photo: string; provider?: string }, guest: boolean) {
   if (guest) {
     for (let i = 0; i < 20 && !first(conn.db.myTransfer.iter()); i++) await new Promise(r => setTimeout(r, 100));
     const row = first(conn.db.myTransfer.iter());
     pendingTransfer = row ? row.code : null;
   }
+  $('acctSheet').classList.add('hide');
   google = profile; namePrompted = false;
   store.set(GOOGLE_KEY, '1');
   connect();
 }
+
+// ---------- the account sheet: Google, or email and password (board 36) ----------
+let acMode: 'in' | 'new' = 'new';
+function acView(v: 'acChoose' | 'acForm' | 'acSent') {
+  for (const id of ['acChoose', 'acForm', 'acSent']) $(id).classList.toggle('hide', id !== v);
+}
+function acSetMode(m: 'in' | 'new') {
+  acMode = m;
+  document.querySelectorAll<HTMLElement>('[data-ac-tab]').forEach(b => { const on = b.dataset.acTab === m; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
+  $('acGo').textContent = m === 'new' ? 'Create account' : 'Sign in';
+  $('acPass').setAttribute('autocomplete', m === 'new' ? 'new-password' : 'current-password');
+  $('acForgot').classList.toggle('hide', m === 'new');
+  $('acErr').textContent = '';
+  acHint();
+}
+function acHint() {
+  const n = ($('acPass') as HTMLInputElement).value.length, h = $('acHint');
+  h.textContent = acMode === 'new' ? (n >= 8 ? '✓ At least 8 characters' : 'At least 8 characters') : '';
+  h.classList.toggle('ok', acMode === 'new' && n >= 8);
+}
+/** Open the sheet: the Google-or-email choice, or straight to the email form. */
+function openAcct(view: 'choose' | 'form' = 'choose', mode: 'in' | 'new' = 'new') {
+  closeModals();
+  acSetMode(mode);
+  acView(view === 'form' ? 'acForm' : 'acChoose');
+  ($('acGo') as HTMLButtonElement).disabled = false;
+  $('acctSheet').classList.remove('hide');
+  if (view === 'form') setTimeout(() => $('acMail').focus(), 50);
+}
+const acClose = () => { $('acctSheet').classList.add('hide'); pendingQueue = false; };
+$('acctSheet').addEventListener('click', (e: Event) => {
+  const t = e.target as HTMLElement;
+  if (t === $('acctSheet') || t.closest('[data-ac-close]')) acClose();
+  const tab = t.closest('[data-ac-tab]') as HTMLElement | null;
+  if (tab) acSetMode(tab.dataset.acTab as 'in' | 'new');
+});
+$('acGoogle').onclick = () => { $('acctSheet').classList.add('hide'); googleSignIn(); };
+$('acEmail').onclick = () => { acView('acForm'); setTimeout(() => $('acMail').focus(), 50); };
+$('acBack').onclick = () => acView('acChoose');
+$('acPass').addEventListener('input', acHint);
+$('acEye').onclick = () => {
+  const p = $('acPass') as HTMLInputElement, show = p.type === 'password';
+  p.type = show ? 'text' : 'password';
+  $('acEye').setAttribute('aria-pressed', String(show)); $('acEye').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+};
+/** Firebase's error codes, in plain words. */
+function emailError(code: string): string {
+  if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) return 'Wrong email or password. Check them, or tap Forgot password.';
+  if (code.includes('email-already-in-use')) return 'That email already has an account. Tap Sign in instead.';
+  if (code.includes('weak-password')) return 'Choose a longer password: at least 8 characters.';
+  if (code.includes('invalid-email')) return "That doesn't look like an email address.";
+  if (code.includes('too-many-requests')) return 'Too many tries. Wait a minute, then try again.';
+  if (code.includes('network-request-failed')) return 'No connection. Check your internet and try again.';
+  if (code.includes('operation-not-allowed')) return 'Email sign-in is switched off in Firebase (Authentication → Sign-in method → Email/Password).';
+  if (code.includes('unauthorized-domain')) return `Sign-in isn't allowed on ${location.hostname} yet. Add it in Firebase → Authentication → Settings → Authorized domains.`;
+  return `Sign-in failed (${code || 'unknown error'}). Try again.`;
+}
+const validEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+$('acForm').onsubmit = async (e: Event) => {
+  e.preventDefault();
+  const email = ($('acMail') as HTMLInputElement).value.trim(), pass = ($('acPass') as HTMLInputElement).value;
+  const err = (m: string) => { $('acErr').textContent = m; };
+  if (!validEmail(email)) return err('Enter your email address.');
+  if (acMode === 'new' && pass.length < 8) return err('Choose a password with at least 8 characters.');
+  if (!pass) return err('Enter your password.');
+  const auth = await authReady;
+  if (!auth || !auth.configured) return err("Sign-in isn't set up yet.");
+  err('');
+  const go = $('acGo') as HTMLButtonElement;
+  go.disabled = true; go.textContent = acMode === 'new' ? 'Creating your account…' : 'Signing in…';
+  const guest = !!(me && me.isGuest && !google);
+  if (guest) call('prepareTransfer');
+  try {
+    const profile = await auth.emailSignIn(email, pass, acMode === 'new');
+    await finishSignIn(profile, guest);
+  } catch (e: any) {
+    err(emailError(String((e && e.code) || '')));
+    go.disabled = false; acSetMode(acMode); $('acErr').textContent = emailError(String((e && e.code) || ''));
+  }
+};
+let acResetTo = '';
+async function sendReset(again: boolean) {
+  const email = again ? acResetTo : ($('acMail') as HTMLInputElement).value.trim();
+  if (!validEmail(email)) { $('acErr').textContent = 'Type your email above first, then tap Forgot password.'; return; }
+  const auth = await authReady;
+  if (!auth) return;
+  try { await auth.resetPassword(email); }
+  catch (e: any) { const code = String((e && e.code) || ''); if (!again) $('acErr').textContent = emailError(code); else toast(emailError(code)); if (!code.includes('user-not-found')) return; }
+  acResetTo = email;
+  const [u, d] = email.split('@');
+  $('acSentTo').textContent = `${u!.slice(0, 2)}•••@${d}`;
+  acView('acSent');
+  if (again) toast('Sent again. Check your spam folder too.');
+}
+$('acForgot').onclick = () => sendReset(false);
+$('acResend').onclick = () => sendReset(true);
+$('acSentBack').onclick = () => { acSetMode('in'); acView('acForm'); };
 async function googleSignOut() {
   const auth = await authReady;
   google = null; pendingQueue = false;
@@ -436,19 +540,23 @@ $('authForm').onsubmit = async (e: Event) => {
 /** "Get an account": Google sign-in when Firebase is set up, otherwise just a username. */
 async function startAccount() {
   const auth = await authReady;
-  if (auth && auth.configured && !google) return googleSignIn();
+  if (auth && auth.configured && !google) return openAcct('choose');
   openAuth(google ? 'Pick a username other players will see.' : 'Pick a name to play ranked. Your stats carry over.');
 }
-$('btnGoogle').onclick = () => { pendingQueue = false; startAccount(); };
+// the lobby button stays one tap for Google; "or use email" goes straight to the email form
+$('btnGoogle').onclick = () => { pendingQueue = false; if (!google && googleOn) googleSignIn(); else startAccount(); };
+$('btnEmailIn').onclick = () => { pendingQueue = false; openAcct('form', 'new'); };
 
+const MAIL_ICON = '<svg class="gG mailG" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="3" fill="none" stroke="#2a83f0" stroke-width="2.2"/><path d="m4 7.5 8 6 8-6" fill="none" stroke="#2a83f0" stroke-width="2.2" stroke-linejoin="round"/></svg>';
 /** Your own avatar with your aura. */
 function avatar(el: any, size = 48) { if (me) el.innerHTML = avatarHtml(me.avatar, me.frame, size, me.name); }
 /** The Account rows in Settings. */
 function renderAccount() {
   if (!me) return;
   const rows: string[] = [];
-  rows.push(`<div class="ri acct">${avatarHtml(me.avatar, me.frame, 40)}<span><b>${esc(me.name)}</b><small>${google ? 'Signed in with Google' : me.isGuest ? 'Guest: progress is saved on this device only' : 'Account'}</small></span></div>`);
-  if (me.isGuest) rows.push(`<button class="ri" type="button" data-acct="signin"><span>${google ? 'Choose a username' : googleOn ? 'Continue with Google' : 'Create account'}<small>Keep your progress on every device</small></span><span class="chev">›</span></button>`);
+  rows.push(`<div class="ri acct">${avatarHtml(me.avatar, me.frame, 40)}<span><b>${esc(me.name)}</b><small>${google ? (google.provider === 'email' ? `Signed in as ${esc(google.email)}` : 'Signed in with Google') : me.isGuest ? 'Guest: progress is saved on this device only' : 'Account'}</small></span></div>`);
+  if (me.isGuest) rows.push(`<button class="ri" type="button" data-acct="signin"><span class="${!google && googleOn ? 'gRow' : ''}">${google ? 'Choose a username' : googleOn ? `<span class="gLine">${GOOGLE_G}Continue with Google</span>` : 'Create account'}<small>Keep your progress on every device</small></span><span class="chev">›</span></button>`);
+  if (me.isGuest && !google && googleOn) rows.push(`<button class="ri" type="button" data-acct="email"><span class="gRow"><span class="gLine">${MAIL_ICON}Continue with email</span><small>Sign in or create an account with a password</small></span><span class="chev">›</span></button>`);
   if (google) rows.push('<button class="ri" type="button" data-acct="signout"><span>Sign out</span><span class="chev">›</span></button>');
   rows.push('<button class="ri red" type="button" data-acct="delete"><span>Delete account</span><span class="chev">›</span></button>');
   $('setAccount').innerHTML = rows.join('');
@@ -457,7 +565,8 @@ $('setAccount').addEventListener('click', (e: Event) => {
   const b = (e.target as HTMLElement).closest('[data-acct]') as HTMLElement | null;
   if (!b) return;
   const act = b.dataset.acct;
-  if (act === 'signin') { closeSheet('settingsSheet'); pendingQueue = false; startAccount(); }
+  if (act === 'signin') { closeSheet('settingsSheet'); pendingQueue = false; if (!google && googleOn) googleSignIn(); else startAccount(); }
+  else if (act === 'email') { closeSheet('settingsSheet'); pendingQueue = false; openAcct('form', 'new'); }
   else if (act === 'signout') { closeSheet('settingsSheet'); googleSignOut(); }
   else if (act === 'delete') settingsPage('setDelete');
 });
@@ -495,7 +604,8 @@ function renderMe() {
   $('guestCard').classList.toggle('hide', !ACCOUNTS || !me.isGuest);
   $('guestText').textContent = google ? 'Pick a username to finish your account.'
     : googleOn ? 'Sign in to keep your progress on every device.' : 'Create an account to pick your own name.';
-  $('btnGoogle').textContent = google ? 'Choose a username' : googleOn ? 'Continue with Google' : 'Create account';
+  $('btnGoogle').innerHTML = google ? 'Choose a username' : googleOn ? `${GOOGLE_G}Continue with Google` : 'Create account';
+  $('btnEmailIn').classList.toggle('hide', !!google || !googleOn);
   renderLevel();
   renderDaily();
   renderModes();
@@ -726,11 +836,73 @@ function renderDaily() {
     : `+${COINS.dailyPlay} coins, +${COINS.dailyWin} more for a win`;
 }
 setInterval(() => { if (me && showing('scrLobby')) { renderDaily(); renderBoard(); renderNotice(); renderModes(); } }, 30000);
-$('btnDaily').onclick = () => {
+// Tapping Daily opens a short sheet: two rules, the reward and your streak. The match starts from its Start button.
+let dsTimer: any = 0;
+const DAILY_BOTS = ['Rocky', 'Snips', 'Papyrus', 'Clutch', 'Nova', 'Blitz', 'Vex', 'Echo']; // keep in step with BOT_NAMES on the server
+/** Today's result as a medal: badge, big lettering, score against today's bot, coins, how everyone did; then the countdown ring. */
+function renderDailyMedal(s: any, res: string) {
+  const day = today(), bot = `${DAILY_BOTS[day % DAILY_BOTS.length]}_daily`;
+  const badge = res === 'win' ? TROPHY : res === 'loss' ? SKULL : SHAKE;
+  const title = res === 'win' ? 'CHALLENGE WON' : res === 'loss' ? 'CHALLENGE LOST' : "IT'S A DRAW";
+  const coins = COINS.dailyPlay + (res === 'win' ? COINS.dailyWin : 0);
+  const w = Array.from(conn.db.dailyStats.iter()).find((d: any) => d.day === day);
+  const pct = w && w.plays >= 5 ? Math.round((w.wins / w.plays) * 100) : -1;
+  $('dsMedal').className = `dsMedal ${res}`;
+  $('dsMedal').innerHTML = `<span class="dmBadge">${badge}</span><span class="dmTitle">${title}</span>`
+    + `<span class="dmVs"><b>${s.dailyYou}</b> – <i>${s.dailyThem}</i> against ${esc(bot)}</span>`
+    + `<span class="dmChips"><span class="dmChip g"><i class="coin"></i>+${coins} earned</span>${pct >= 0 ? `<span class="dmChip">${pct}% won today</span>` : ''}</span>`;
+  const left = msToNextDay(), frac = Math.min(1, Math.max(0, 1 - left / 86_400_000)), C = 2 * Math.PI * 18;
+  $('dsNextBox').innerHTML = `<svg class="dmRing" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="5"/>`
+    + `<circle cx="22" cy="22" r="18" fill="none" stroke="#ffc83d" stroke-width="5" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - frac)).toFixed(1)}" transform="rotate(-90 22 22)"/></svg>`
+    + `<span><b>Next challenge in ${shortTime(left)}</b><small>Come back tomorrow to keep your streak</small></span>`;
+}
+function renderDailySheet() {
+  const { s, played, streak, done } = dailyState();
+  $('dsNext').textContent = done ? new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' }) : `${played ? 'Next one' : 'New one'} in ${shortTime(msToNextDay())}`;
+  // after today's try the rules make way for the result
+  for (const id of ['dsPills', 'dsFoot']) $(id).classList.toggle('hide', done);
+  $('dsRew').classList.toggle('hide', done);
+  $('dsMedal').classList.toggle('hide', !done); $('dsNextBox').classList.toggle('hide', !done);
+  if (done) { $('dsMore').classList.add('hide'); renderDailyMedal(s, s.dailyResult); }
+  $('dsStreak').classList.toggle('hide', streak === 0);
+  $('dsStreakN').textContent = `${streak}-day streak`;
+  const coin = '<i class="coin"></i>';
+  if (played) {
+    const res = !done ? 'Played today' : s.dailyResult === 'win' ? `You won ${s.dailyYou}–${s.dailyThem} today` : s.dailyResult === 'loss' ? `You lost ${s.dailyYou}–${s.dailyThem} today` : `You drew ${s.dailyYou}–${s.dailyThem} today`;
+    $('dsRew').innerHTML = `<span class="dsDone ${done ? s.dailyResult : ''}">${esc(res)}</span>`;
+  } else $('dsRew').innerHTML = `Win for <b>${coin}+${COINS.dailyPlay + COINS.dailyWin}</b>`;
+  const start = $('dsStart') as HTMLButtonElement;
+  start.disabled = played && !done;
+  start.className = played ? 'btn ghost' : 'btn gold big';
+  start.innerHTML = done ? 'Close' : played ? `Come back in ${shortTime(msToNextDay())}` : `${ICON_PLAY}Start`;
+}
+const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5Z" fill="currentColor"/></svg>';
+function openDailySheet() {
   $('lobbyErr').textContent = '';
-  if (dailyState().played) { homeMsg(`You've played today's challenge. The next one is in ${shortTime(msToNextDay())}.`); return; }
+  $('dsMore').classList.add('hide'); $('dsHow').setAttribute('aria-expanded', 'false');
+  $('dsMore').innerHTML = `Everyone plays the same 10 cards today, against a bot that plays its cards in the same order for everyone. `
+    + `You get one try, and leaving counts as a loss. Playing gives +${COINS.dailyPlay} coins, a win +${COINS.dailyWin} more, plus bonus XP. `
+    + `Play on back-to-back days to build your streak. A new challenge starts every day at ${new Date(Date.UTC(2000, 0, 1)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
+  renderDailySheet();
+  $('dailySheet').classList.remove('hide');
+  clearInterval(dsTimer);
+  dsTimer = setInterval(() => { if ($('dailySheet').classList.contains('hide')) clearInterval(dsTimer); else renderDailySheet(); }, 30000);
+  ($('dsStart') as HTMLButtonElement).disabled ? $('dsClose').focus() : $('dsStart').focus();
+}
+if (import.meta.env.DEV) (window as any).__dailyAs = (res: string, you = 6, them = 3) => { renderDailyMedal({ dailyYou: you, dailyThem: them }, res); };
+const closeDailySheet = () => $('dailySheet').classList.add('hide');
+$('btnDaily').onclick = openDailySheet;
+$('dsStart').onclick = () => {
+  if (dailyState().played) { closeDailySheet(); return; }
+  closeDailySheet();
   dismissed = null;
   call('startDaily');
+};
+$('dsClose').onclick = closeDailySheet;
+$('dailySheet').addEventListener('click', (e: Event) => { if (e.target === $('dailySheet')) closeDailySheet(); });
+$('dsHow').onclick = () => {
+  const more = $('dsMore'), open = more.classList.toggle('hide') === false;
+  $('dsHow').setAttribute('aria-expanded', String(open));
 };
 
 /** New achievements since this connection loaded: announced with a toast and on the end screen. */
@@ -902,6 +1074,10 @@ function waitScreen(title: string, code: string, sub: string) {
   $('btnShareCode').classList.toggle('hide', !code);
   $('linkRow').classList.toggle('hide', !code);
   if (code) $('waitLink').textContent = roomLink(code).replace(/^https?:\/\//, '');
+  if (code && challengePending) {
+    challengePending = false;
+    navigator.clipboard.writeText(roomLink(code)).then(() => toast('Challenge link copied. Send it to a friend!'), () => toast('Your room is ready. Share the link below.'));
+  }
   if (!showing('scrWait')) show('scrWait');
   fromWait = true;
   clearInterval(waitTick);
@@ -1080,9 +1256,12 @@ function renderGame(entering: boolean, firstOfGame: boolean) {
   } else if (prep) {
     $('chipYou').textContent = s.you.ready ? 'You ✓' : 'You'; $('chipYou').className = 'chip' + (s.you.ready ? ' ok' : '');
     $('chipOpp').textContent = s.opp.name + (s.opp.ready ? ' ✓' : ''); $('chipOpp').className = 'chip' + (s.opp.ready ? ' ok' : '');
-    btn.disabled = s.you.ready;
-    btn.classList.add('go');
-    btn.textContent = s.you.ready ? (s.opp.ready ? 'Starting…' : 'Waiting for opponent…') : 'Ready';
+    // Ready sits on the table, where it's easy to see; the bottom slot stays (empty) so nothing jumps
+    const pr = $('prepReady') as HTMLButtonElement;
+    pr.disabled = s.you.ready;
+    pr.textContent = s.you.ready ? (s.opp.ready ? 'Starting…' : 'Waiting for opponent…') : 'Ready';
+    btn.disabled = true; btn.textContent = 'Ready';
+    btn.classList.add('prepHide');
   } else if (phase === 'pick') {
     btn.disabled = !localSel || s.you.locked;
     btn.classList.add(s.you.locked ? 'done' : 'lockIn');
@@ -1328,6 +1507,7 @@ function showEnd() {
   $('endTitle').textContent = res === 'win' ? 'Victory!' : res === 'loss' ? 'Defeat' : 'Draw';
   $('endYou').textContent = G.you.score; $('endOpp').textContent = G.opp.score;
   $('endNameYou').textContent = G.you.name; $('endNameOpp').textContent = G.opp.name;
+  renderEndOpp();
   const chips: string[] = [];
   if (e.reason === 'disconnect') chips.push(e.result === 'win' ? 'Opponent left' : 'You disconnected');
   if (e.reason === 'forfeit') chips.push(e.result === 'win' ? 'Opponent left' : 'You left');
@@ -1349,58 +1529,132 @@ function showEnd() {
   $('over').classList.remove('hide');
   if (endShown !== G.gameId) {
     endShown = G.gameId;
-    showLog(false);
+    showLog(false); showChat(false);
+    startEndAuto();
     if (res === 'win') { sfx.victory(); winEffect((me && me.fx) || 'confetti'); vibrate([30, 60, 30, 60, 80]); }
     else if (res === 'loss') { sfx.defeat(); if (G.opp.fx && G.opp.fx !== 'confetti') winEffect(G.opp.fx, true); vibrate(120); }
     else sfx.roundDraw();
   }
 }
+/** The opponent card on the end screen: who you just played, big enough to recognise. */
+function renderEndOpp() {
+  const o = G.opp, bot = o.isBot;
+  $('endOppAv').innerHTML = avatarHtml(o.avatar, o.frame, 54, o.name);
+  $('endOppName').textContent = o.name;
+  const ot = tierOf(o.rating);
+  $('endOppSub').innerHTML = bot ? `<span class="ttl bot">${G.mode === 'daily' ? 'DAILY' : 'BOT'}</span>`
+    : `<span class="eoRank">${tierBadge(ot, 'xs')}${ot.name} ${fmt(o.rating)}</span>${titleHtml(o.title)}`;
+  const open = $('endOppOpen') as HTMLButtonElement;
+  open.disabled = bot; open.classList.toggle('bot', bot);
+}
+// try the end screen against a person from the console while developing: __endAs({ isBot: false, friend: 'none' }, 'ranked')
+if (import.meta.env.DEV) (window as any).__endAs = (opp: any, m?: string) => { if (!G || !G.ended) return; Object.assign(G.opp, opp); if (m) G.mode = m; showEnd(); };
+$('endOppOpen').addEventListener('click', () => { if (G && !G.opp.isBot) openProfile(G.opp.name); });
 // ---------- share the result as an image ----------
-let shareFile: File | null = null, shareUrl = '';
-$('btnShareResult').onclick = async () => {
+// ---------- share the result as an image (Story or Square) ----------
+const MODE_LABEL: Record<string, string> = { ranked: 'Ranked', casual: 'Unranked', bot: 'Vs bot', practice: 'Practice', friend: 'Friend match', room: 'Friend match', daily: 'Daily challenge' };
+let shareFmt: CardFormat = 'story', shareFile: File | null = null, shareUrl = '', shareGen = 0;
+const shareCache: Record<string, Blob> = {}; let shareCacheGame = '';
+async function renderShare() {
   if (!G || !G.ended) return;
+  const gen = ++shareGen, fmt = shareFmt;
+  if (shareCacheGame !== G.gameId) { for (const k of Object.keys(shareCache)) delete shareCache[k]; shareCacheGame = G.gameId; }
   shareFile = null;
   if (shareUrl) { URL.revokeObjectURL(shareUrl); shareUrl = ''; }
   $('shareImg').removeAttribute('src');
+  $('shareImgWrap').classList.toggle('sq', fmt === 'square');
+  document.querySelectorAll<HTMLElement>('.shSeg [data-fmt]').forEach(b => { const on = b.dataset.fmt === fmt; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  $('shareLoading').textContent = 'Making your card…';
   $('shareLoading').classList.remove('hide');
   $('shareGo').disabled = true; $('shareSave').disabled = true;
-  $('shareModal').classList.remove('hide');
   try {
-    const blob = await drawResultCard({
-      result: G.ended.result, you: G.you.name, opp: G.opp.name, youScore: G.you.score, oppScore: G.opp.score,
-      rounds: G.log.map((l: any) => ({ you: l.you, result: l.result })),
+    const blob = shareCache[fmt] || await drawResultCard({
+      format: fmt, result: G.ended.result, you: G.you.name, opp: G.opp.name, youScore: G.you.score, oppScore: G.opp.score,
+      youAvatar: me ? me.avatar : 'rocky', oppAvatar: G.opp.avatar, youRating: me ? me.rating : 1000, oppRating: G.opp.rating, oppIsBot: !!G.opp.isBot,
+      mode: MODE_LABEL[G.mode] || '', rounds: G.log.map((l: any) => ({ you: l.you, result: l.result })),
       rated: G.rated, ratingChange: G.ratingChange, link: siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, ''),
     });
-    shareFile = new File([blob], 'rps10-result.png', { type: 'image/png' });
+    if (gen !== shareGen) return; // switched size while drawing
+    shareCache[fmt] = blob;
+    shareFile = new File([blob], `rps10-result-${fmt}.png`, { type: 'image/png' });
     shareUrl = URL.createObjectURL(blob);
     $('shareImg').src = shareUrl;
     $('shareLoading').classList.add('hide');
     $('shareGo').disabled = false; $('shareSave').disabled = false;
-    // sharing an image needs a phone-style share sheet; elsewhere "Save image" does the job
-    const canFiles = !!(navigator.canShare && navigator.canShare({ files: [shareFile] }));
-    $('shareGo').classList.toggle('hide', !canFiles);
   } catch {
-    $('shareLoading').textContent = "Couldn't make the image. Try again.";
+    if (gen === shareGen) $('shareLoading').textContent = "Couldn't make the image. Try again.";
   }
+}
+$('btnShareResult').onclick = () => {
+  if (!G || !G.ended) return;
+  $('shareModal').classList.remove('hide');
+  renderShare();
 };
+document.querySelectorAll<HTMLElement>('.shSeg [data-fmt]').forEach(b => b.addEventListener('click', () => {
+  if (shareFmt === b.dataset.fmt) return;
+  shareFmt = b.dataset.fmt as CardFormat; renderShare();
+}));
+const shareText = () => !G ? 'RPS 10' : G.ended && G.ended.result === 'win'
+  ? `I just won ${G.you.score}–${G.opp.score} at RPS 10. Think you can beat me?` : `${G.you.score}–${G.opp.score} at RPS 10. Can you do better?`;
 $('shareGo').onclick = async () => {
   if (!shareFile || !G) return;
-  const text = G.ended && G.ended.result === 'win' ? `I just won ${G.you.score}–${G.opp.score} at RPS 10 🪨📄✂️ Think you can beat me?` : `${G.you.score}–${G.opp.score} at RPS 10 🪨📄✂️ Can you do better?`;
-  try { await navigator.share({ files: [shareFile], text: `${text} ${siteUrl()}` }); }
-  catch (e: any) { if (!e || e.name !== 'AbortError') toast("Couldn't open sharing. Use Save image instead."); }
+  const text = `${shareText()} ${siteUrl()}`;
+  // phones share the image itself; elsewhere share the text and link, or save the image
+  if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+    try { await navigator.share({ files: [shareFile], text }); }
+    catch (e: any) { if (!e || e.name !== 'AbortError') toast("Couldn't open sharing. Use Save image instead."); }
+  } else if (navigator.share) {
+    try { await navigator.share({ title: 'RPS 10', text: shareText(), url: siteUrl() }); } catch {}
+  } else { $('shareSave').click(); toast('Image saved. Post it anywhere!'); }
 };
 $('shareSave').onclick = () => {
   if (!shareUrl) return;
   const a = document.createElement('a');
-  a.href = shareUrl; a.download = 'rps10-result.png';
+  a.href = shareUrl; a.download = shareFile ? shareFile.name : 'rps10-result.png';
   document.body.appendChild(a); a.click(); a.remove();
+};
+$('shareCopy').onclick = async () => {
+  const lbl = $('shareCopy').querySelector('span')!;
+  try { await navigator.clipboard.writeText(`${shareText()} ${siteUrl()}`); lbl.textContent = 'Copied!'; setTimeout(() => { lbl.textContent = 'Copy link'; }, 1500); }
+  catch { toast(siteUrl()); }
+};
+// Challenge: leave this match, open a friend room, and copy its invite link
+let challengePending = false;
+$('shareChallenge').onclick = () => {
+  $('shareModal').classList.add('hide');
+  stopEndAuto();
+  if (G) dismissed = G.gameId;
+  challengePending = true;
+  call('leaveGame').then(() => call('createRoom')).then(ok => { if (!ok) challengePending = false; });
 };
 $('shareClose').onclick = () => $('shareModal').classList.add('hide');
 
-$('btnBack').onclick = () => { if (G) dismissed = G.gameId; call('leaveGame'); toLobby(); };
+$('btnBack').onclick = () => { stopEndAuto(); if (G) dismissed = G.gameId; call('leaveGame'); toLobby(); };
+// ---------- back to the lobby on its own if nobody picks anything ----------
+const END_AUTO_MS = 20000;
+let endAutoAt = 0, endAutoLast = 0, endAutoTimer: any = 0;
+/** (Re)start the countdown: when the pop-up opens, and when either player asks for a rematch. */
+function startEndAuto() {
+  endAutoAt = Date.now() + END_AUTO_MS; endAutoLast = Date.now();
+  if (!endAutoTimer) endAutoTimer = setInterval(tickEndAuto, 250);
+  tickEndAuto();
+}
+function stopEndAuto() { clearInterval(endAutoTimer); endAutoTimer = 0; $('endAuto').textContent = ''; }
+function tickEndAuto() {
+  if (!G || !G.ended || $('over').classList.contains('hide')) return stopEndAuto();
+  const now = Date.now();
+  // paused while you're busy: sharing, reporting, looking at their profile, or chatting
+  const open = (id: string) => !$(id).classList.contains('hide');
+  if (open('shareModal') || open('reportModal') || open('profileSheet') || chatOpen()) endAutoAt += now - endAutoLast;
+  endAutoLast = now;
+  const left = Math.ceil((endAutoAt - now) / 1000);
+  $('endAuto').textContent = String(Math.max(left, 0));
+  if (left <= 0) $('btnBack').click();
+}
 
 /** The rematch button: against a person it needs both players to ask; against a bot it starts at once. */
 let rmAskedSeen = '';
+const RM_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a8 8 0 0 1 13.7-5.6L20 7.5 M20 3v4.5h-4.5 M20 13a8 8 0 0 1-13.7 5.6L4 16.5 M4 21v-4.5h4.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function renderRematch() {
   const rm = G.rematch, opp = esc(G.opp.name);
   const btn = $('btnRematch'), note = $('rmNote');
@@ -1410,20 +1664,23 @@ function renderRematch() {
   else if (rm.you) { disabled = true; label = `Waiting for ${opp}…`; msg = `Rematch requested — ${opp} needs to accept`; }
   else if (rm.opp) {
     label = 'Accept rematch'; hot = true; msg = `${opp} wants a rematch!`;
-    if (rmAskedSeen !== G.gameId) { rmAskedSeen = G.gameId; sfx.ready(); vibrate([20, 40, 20]); }
+    if (rmAskedSeen !== G.gameId) { rmAskedSeen = G.gameId; sfx.ready(); vibrate([20, 40, 20]); startEndAuto(); }
   }
-  btn.innerHTML = label; btn.disabled = disabled;
+  btn.innerHTML = (disabled ? '' : RM_ICON) + `<span>${label}</span>`; btn.disabled = disabled;
   btn.classList.toggle('hot', hot);
   note.textContent = msg; note.className = 'rmNote' + (hot ? ' hot' : rm.oppLeft ? ' gone' : '');
   // a new opponent only makes sense for online play; practice and friend rooms just rematch or go back
   $('btnAgain').classList.toggle('hide', !(G.mode === 'ranked' || G.mode === 'casual' || G.mode === 'bot'));
   btn.classList.toggle('hide', G.mode === 'daily'); // one try a day
+  const again = !$('btnAgain').classList.contains('hide'), rem = G.mode !== 'daily';
+  $('endModal').classList.toggle('oneMain', again !== rem);
+  $('endModal').classList.toggle('noMain', !again && !rem);
   renderFriendBtn();
   if (G.mode === 'daily') { note.textContent = `Next challenge in ${shortTime(msToNextDay())}`; note.className = 'rmNote'; }
 }
 $('btnRematch').onclick = () => {
   if (!G || !G.ended) return;
-  if (!G.opp.isBot) { G.rematch.you = true; renderRematch(); } // show it at once; the server confirms
+  if (!G.opp.isBot) { G.rematch.you = true; renderRematch(); startEndAuto(); } // show it at once; the server confirms
   call('rematch').then(ok => { if (!ok && G && G.ended) { G.rematch.you = false; renderRematch(); } });
 };
 $('btnAgain').onclick = () => {
@@ -1445,6 +1702,7 @@ function pressAction() {
   }
 }
 $('readyBtn').onclick = pressAction;
+$('prepReady').onclick = pressAction;
 
 function askExit() {
   if (!G || G.phase === 'over') return;
@@ -1633,15 +1891,27 @@ function showChat(open: boolean) {
 }
 function renderBadge() { $('chatBadge').textContent = unread ? String(Math.min(unread, 9)) : ''; }
 
+const CHAT_GAP_MS = 3000; // the server allows one message every 3 seconds
+let chatCoolUntil = 0, chatCoolTimer: any = 0;
+/** While you wait for your next message: the send buttons are dimmed, the sheet counts down and the Chat button drains. */
+function renderChatCool() {
+  const left = chatCoolUntil - Date.now(), cool = left > 0;
+  document.body.classList.toggle('chatCool', cool);
+  $('chatGap').textContent = cool ? `Next message in ${Math.ceil(left / 1000)}s` : 'One message every 3 seconds';
+  clearTimeout(chatCoolTimer);
+  if (cool) chatCoolTimer = setTimeout(renderChatCool, Math.min(left, 200));
+}
 function sendChat(kind: 'emoji' | 'phrase', body: string) {
-  if (!G) return;
+  if (!G || Date.now() < chatCoolUntil) return;
   if (kind === 'emoji') sfx.emote();
-  call('sendChat', { kind, body });
+  chatCoolUntil = Date.now() + CHAT_GAP_MS;
+  const btn = $('btnChat'); btn.classList.remove('cool'); void btn.offsetWidth; btn.classList.add('cool');
+  renderChatCool();
+  call('sendChat', { kind, body }).then(ok => { if (!ok) { chatCoolUntil = 0; renderChatCool(); } });
 }
 $('chatEmoji').addEventListener('click', (e: any) => { const b = e.target.closest('.emo'); if (b) { sendChat('emoji', b.dataset.e); showChat(false); } });
 $('chatPhrases').addEventListener('click', (e: any) => { const b = e.target.closest('.phr'); if (b) { sendChat('phrase', b.dataset.p); showChat(false); } });
 $('btnChat').onclick = () => showChat(!chatOpen());
-$('endChat').onclick = () => showChat(true);
 $('chatClose').onclick = () => showChat(false);
 $('chatDim').onclick = () => showChat(false);
 $('chatMute').onchange = () => setChatMuted($('chatMute').checked);
@@ -1652,7 +1922,9 @@ $('chatEdit').onclick = () => {
 };
 
 function chatRows() {
-  return Array.from(conn.db.myChat.iter()).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // only this match's messages: the client can still hold the last match's for a moment after a rematch
+  const gid = G ? G.gameId : '';
+  return Array.from(conn.db.myChat.iter()).filter(m => String(m.gameId) === gid).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 const chatItem = (m: any, color: string) => (m.kind === 'emoji' ? `<span class="stk">${reactionSvg(m.body)}</span>` : ticketHtml(m.body, color));
 /** New messages since we last looked: bubble them, count unread, and sound. */
@@ -1661,7 +1933,7 @@ function syncChat(firstOfGame: boolean) {
   const last = rows.length ? rows[rows.length - 1]!.id : 0n;
   if (firstOfGame || chatGame !== G.gameId) {
     // a game we just arrived in: don't replay what was said before
-    chatGame = G.gameId; chatSeen = last; unread = 0; chatSig = '';
+    chatGame = G.gameId; chatSeen = last; unread = 0; chatSig = ''; chatCoolUntil = 0; renderChatCool();
     hideBubble('bubYou'); hideBubble('bubOpp');
   } else {
     for (const m of rows) {
@@ -1715,9 +1987,11 @@ function renderFriendBtn() {
   const b = $('btnAddFriend');
   const person = G && !G.opp.isBot;
   const st = person ? G.opp.friend : 'friends';
-  b.classList.toggle('hide', !person || st === 'friends');
-  b.disabled = st === 'out';
-  b.textContent = st === 'in' ? `Accept ${G ? G.opp.name : ''}'s friend request` : st === 'out' ? 'Friend request sent' : 'Add friend';
+  b.classList.toggle('hide', !person);
+  b.disabled = st === 'out' || st === 'friends';
+  b.className = 'eoAdd' + (st === 'in' ? ' hot' : st === 'friends' ? ' done' : '') + (person ? '' : ' hide');
+  $('addFriendTx').textContent = st === 'in' ? 'Accept' : st === 'out' ? 'Sent' : st === 'friends' ? 'Friends' : 'Add';
+  b.setAttribute('aria-label', st === 'in' ? `Accept ${G ? G.opp.name : ''}'s friend request` : st === 'out' ? 'Friend request sent' : st === 'friends' ? 'Already friends' : `Add ${G ? G.opp.name : ''} as a friend`);
   $('btnReport').classList.toggle('hide', !person || reportedGame === (G && G.gameId));
 }
 $('btnAddFriend').onclick = () => {
