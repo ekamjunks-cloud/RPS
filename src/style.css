@@ -1857,3 +1857,12 @@ body.chatCool #chatGap{color:var(--gold)}
 .gbBtns{flex:0 0 auto!important;display:flex;flex-direction:column;align-items:center;gap:2px}
 .gbEmail{font-size:12px;padding:2px 6px;color:#bfefff;text-decoration:underline;text-decoration-color:rgba(255,255,255,.3);text-underline-offset:3px}
 .acSheet .dsGrab{margin-bottom:12px}
+/* in a match: Chat and Turns are icons only (their names stay for screen readers); Lock in takes the room (board 37, B1) */
+.gBar{position:relative;z-index:6}
+.gBar .gBtn{width:56px;padding:0;justify-content:center;border-radius:16px}
+.gBar .gBtn .gl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.gBar .gBtn svg{width:24px;height:24px}
+.gBar .gBtn .badge{position:absolute;top:-7px;right:-7px;margin:0;min-width:20px;height:20px;border-radius:10px;box-shadow:0 0 0 2.5px var(--bg0);z-index:2}
+.gBar .btn.action{font-size:22px;letter-spacing:.6px;border-radius:18px}
+.gBar .btn.action.lockIn:not(:disabled){box-shadow:0 5px 0 var(--cd),0 0 24px rgba(255,200,61,.35),inset 0 1px 0 rgba(255,255,255,.25)}
+@media (max-height:740px){.gBar .gBtn{width:50px}}

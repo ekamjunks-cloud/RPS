@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.6';
+const VERSION = '2.6.1';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = 'support@rps10.online';
@@ -844,13 +844,19 @@ function renderDailyMedal(s: any, res: string) {
   const day = today(), bot = `${DAILY_BOTS[day % DAILY_BOTS.length]}_daily`;
   const badge = res === 'win' ? TROPHY : res === 'loss' ? SKULL : SHAKE;
   const title = res === 'win' ? 'CHALLENGE WON' : res === 'loss' ? 'CHALLENGE LOST' : "IT'S A DRAW";
-  const coins = COINS.dailyPlay + (res === 'win' ? COINS.dailyWin : 0);
+  // the win bonus is boosted by a coins event if the match ended during one (the +play coins come at the start and aren't)
+  const dayStart = day * 86_400_000, toMs = (v: any) => Number(BigInt(v ?? 0) / 1000n);
+  const h = Array.from(conn.db.myHistory.iter()).find((x: any) => x.mode === 'daily' && x.at.toDate().getTime() >= dayStart);
+  const at = h ? h.at.toDate().getTime() : Date.now(), si = info();
+  const pct = si && si.eventName && toMs(si.eventStartsAt) <= at && at < toMs(si.eventEndsAt) ? si.eventCoinPct : 100;
+  const coins = COINS.dailyPlay + (res === 'win' ? Math.round(COINS.dailyWin * pct / 100) : 0);
+  const boost = res === 'win' && pct > 100 ? ` · ${pct / 100}× event` : '';
   const w = Array.from(conn.db.dailyStats.iter()).find((d: any) => d.day === day);
-  const pct = w && w.plays >= 5 ? Math.round((w.wins / w.plays) * 100) : -1;
+  const won = w && w.plays >= 5 ? Math.round((w.wins / w.plays) * 100) : -1;
   $('dsMedal').className = `dsMedal ${res}`;
   $('dsMedal').innerHTML = `<span class="dmBadge">${badge}</span><span class="dmTitle">${title}</span>`
     + `<span class="dmVs"><b>${s.dailyYou}</b> – <i>${s.dailyThem}</i> against ${esc(bot)}</span>`
-    + `<span class="dmChips"><span class="dmChip g"><i class="coin"></i>+${coins} earned</span>${pct >= 0 ? `<span class="dmChip">${pct}% won today</span>` : ''}</span>`;
+    + `<span class="dmChips"><span class="dmChip g"><i class="coin"></i>+${coins} earned${boost}</span>${won >= 0 ? `<span class="dmChip">${won}% won today</span>` : ''}</span>`;
   const left = msToNextDay(), frac = Math.min(1, Math.max(0, 1 - left / 86_400_000)), C = 2 * Math.PI * 18;
   $('dsNextBox').innerHTML = `<svg class="dmRing" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="5"/>`
     + `<circle cx="22" cy="22" r="18" fill="none" stroke="#ffc83d" stroke-width="5" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - frac)).toFixed(1)}" transform="rotate(-90 22 22)"/></svg>`
