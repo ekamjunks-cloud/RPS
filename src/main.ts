@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.6.1';
+const VERSION = '2.6.2';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = 'support@rps10.online';
@@ -2347,8 +2347,14 @@ $('delGo').onclick = async () => {
   closeModals();
   // a fresh start: forget this device's guest login and any Google sign-in
   store.set(TOKEN_KEY, null);
-  if (google) { google = null; store.set(GOOGLE_KEY, null); try { const auth = await authReady; if (auth) await auth.signOutUser(); } catch {} }
-  notice = 'Your account was deleted. You are now a new guest.';
+  let signInKept = false;
+  if (google) {
+    google = null; store.set(GOOGLE_KEY, null);
+    try { const auth = await authReady; if (auth) signInKept = !(await auth.deleteSignIn()); } catch {}
+  }
+  notice = signInKept
+    ? `Your game account was deleted. Your sign-in details couldn't be removed automatically: email ${SUPPORT_EMAIL} and we'll remove them.`
+    : 'Your account was deleted. You are now a new guest.';
   connect();
 };
 $('setReport').onclick = () => { closeSheet('settingsSheet'); openReport(); };

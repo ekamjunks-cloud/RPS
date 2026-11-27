@@ -1,7 +1,7 @@
 // Google, or email and password, sign-in through Firebase. Loaded in the background so guests never wait for it.
 // The Firebase ID token is what proves to the game server who the player is.
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, type User } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, deleteUser, type User } from 'firebase/auth';
 
 export type Profile = { name: string; email: string; photo: string; provider: 'google' | 'email' };
 
@@ -41,6 +41,14 @@ export async function emailSignIn(email: string, password: string, create: boole
 export async function resetPassword(email: string): Promise<void> {
   if (!auth) throw new Error('not-configured');
   await sendPasswordResetEmail(auth, email);
+}
+/** Delete account: also remove the sign-in record (email and protected password) from Firebase.
+ *  Firebase only allows this soon after signing in; false means it refused, and the player is just signed out. */
+export async function deleteSignIn(): Promise<boolean> {
+  const u = auth && auth.currentUser;
+  if (!u) return true;
+  try { await deleteUser(u); return true; }
+  catch { try { await signOut(auth!); } catch {} return false; }
 }
 export async function signOutUser(): Promise<void> {
   if (auth) await signOut(auth);
