@@ -18,6 +18,7 @@ import {
 const TIMES = { intro: 3000, prep: 20000, readyGo: 600, banner: 1600, pick: 10000, reveal: 4000, result: 3000 }; // ms
 const ROUNDS = 10;               // every match is this many rounds (one per card); most rounds won takes it
 const DC_GRACE_MS = 15000;       // a disconnected player has this long to come back
+const MIN_SEARCH_MS = 3500;      // everyone searches at least this long, so both players are properly in the queue
 const QUEUE_RETRY_MS = 5000;     // re-check the queue this often...
 const QUEUE_RETRIES = 3;         // ...this many times (15s), then start a bot match
 const CLEANUP_MS = 10 * 60 * 1000;      // finished games are removed after 10 minutes
@@ -1119,9 +1120,11 @@ function tryMatch(ctx: Ctx, who: Identity): boolean {
   const mine = ctx.db.queueEntry.identity.find(who);
   if (!mine) return false;
   const waited = (e: { joinedAt: Timestamp }) => Number(ctx.timestamp.microsSinceUnixEpoch - e.joinedAt.microsSinceUnixEpoch) / 1e6;
+  const minSearch = MIN_SEARCH_MS / 1000 - 0.001;
+  if (waited(mine) < minSearch) return false;
   let best: typeof mine | undefined;
   for (const e of ctx.db.queueEntry.iter()) {
-    if (e.identity.isEqual(who) || e.casual !== mine.casual) continue;
+    if (e.identity.isEqual(who) || e.casual !== mine.casual || waited(e) < minSearch) continue;
     const gap = Math.abs(e.rating - mine.rating);
     if (gap > 150 + 50 * Math.max(waited(mine), waited(e))) continue;
     if (!best || gap < Math.abs(best.rating - mine.rating)) best = e;
@@ -1275,9 +1278,9 @@ function enqueue(ctx: Ctx, casual: boolean) {
   p = stopWaiting(ctx, p);
   ctx.db.queueEntry.insert({ identity: p.identity, rating: p.rating, joinedAt: ctx.timestamp, casual });
   ctx.db.player.identity.update({ ...p, waiting: 'queue', gameId: 0n });
-  if (tryMatch(ctx, p.identity)) return;
+  // never matched instantly: the first look for an opponent is after MIN_SEARCH_MS of "Finding opponent"
   ctx.db.queueTimer.insert({
-    scheduledId: 0n, scheduledAt: ScheduleAt.time(addMs(ctx.timestamp, QUEUE_RETRY_MS).microsSinceUnixEpoch),
+    scheduledId: 0n, scheduledAt: ScheduleAt.time(addMs(ctx.timestamp, MIN_SEARCH_MS).microsSinceUnixEpoch),
     identity: p.identity, attempt: 1,
   });
 }
@@ -2132,7 +2135,7 @@ export const myGame = spacetimedb.view({ name: 'my_game', public: true }, t.arra
     revealYouGone: shown ? (you ? g.gone0 : g.gone1) : NONE, revealOppGone: shown ? (you ? g.gone1 : g.gone0) : NONE,
     revealYouAuto: shown && (you ? g.auto0 : g.auto1), revealOppAuto: shown && (you ? g.auto1 : g.auto0),
     over: g.over, endResult: g.over ? result(g.winner, seat) : '', endReason: g.reason,
-    ratingChange: you ? g.ratingDelta : -g.ratingDelta,
+    ratingChange: you ? g.ratingDelta : (g.ratingDelta ? -g.ratingDelta : 0),
     youRematch: g.over && (you ? g.rematch0 : g.rematch1),
     oppRematch: g.over && (you ? g.rematch1 : g.rematch0),
     oppLeft: g.over && !oppStillHere(ctx as any, g, seat),

@@ -825,7 +825,8 @@ body.chatOpen .chatSheet{transform:none;visibility:visible;transition:transform 
    ===================================================================== */
 
 /* ---------- coins ---------- */
-.coin{display:inline-block;width:16px;height:16px;border-radius:50%;vertical-align:-3px;flex:0 0 auto;background:radial-gradient(circle at 35% 30%,#fff3c4,#ffc83d 50%,#c98600);box-shadow:inset 0 0 0 2px rgba(122,76,0,.35),0 1px 0 #7a4c00}
+/* the coin: a hex token stamped "10" (design board 30, C) */
+.coin{display:inline-block;width:16px;height:16px;vertical-align:-3px;flex:0 0 auto;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='r' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23e09a00'/%3E%3Cstop offset='1' stop-color='%237a4700'/%3E%3C/linearGradient%3E%3CradialGradient id='f' cx='.38' cy='.32' r='.8'%3E%3Cstop offset='0' stop-color='%23fff6c4'/%3E%3Cstop offset='.45' stop-color='%23ffd23f'/%3E%3Cstop offset='1' stop-color='%23e09a00'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M32 4 57 18v28L32 60 7 46V18Z' fill='%237a4700'/%3E%3Cpath d='M32 3 56 16.5v27L32 57 8 43.5v-27Z' fill='url(%23r)'/%3E%3Cpath d='M32 8.5 51.5 19.5v22L32 52.5 12.5 41.5v-22Z' fill='url(%23f)'/%3E%3Cpath d='M20.5 25.5 26 22.5h4v19h-5V29l-3.5 1.6Z' fill='%23b06c00'/%3E%3Cellipse cx='39.5' cy='32' rx='6' ry='8.2' fill='none' stroke='%23b06c00' stroke-width='4.6'/%3E%3Cpath d='M14.5 21.5 29.5 12.8' stroke='%23fff' stroke-opacity='.75' stroke-width='3.5' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
 .coinPill{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 14px 0 9px;border-radius:999px;background:rgba(8,6,28,.6);border:1px solid rgba(255,200,61,.45);color:var(--text);font-weight:800;font-size:15px;cursor:pointer;font-family:var(--body)}
 .coinPill.sm{height:32px;font-size:14px;padding:0 12px 0 8px;cursor:default}
 .coinPill .coin{width:20px;height:20px}
@@ -1676,3 +1677,14 @@ html,body{overflow-x:hidden}
 .tlC.lost small{color:var(--opp)}
 .tlC.none{width:32px;height:32px;border-radius:8px;border:2px dashed rgba(255,255,255,.18);justify-content:center;color:var(--dim);font-weight:900}
 @media (min-width:980px){.tlHead,.tlRow{grid-template-columns:22px 1fr 54px 1fr 50px;gap:4px}.tlRow{padding:6px 8px}.tlC .mi{width:28px;height:28px}}
+
+/* award medals: drawn, not emoji */
+.achSvg{display:block;flex:0 0 auto}
+.achIc{display:flex;align-items:center;justify-content:center}
+.ach .achIc .achSvg{width:40px;height:40px}
+.pfAw{font-size:0;background:none!important;border:0!important;filter:none!important;opacity:1!important}
+.pfAw .achSvg{width:100%;height:100%}
+.achChip{display:inline-flex;align-items:center;gap:4px}
+.achChip .achSvg{display:inline-block}
+.apIc .achSvg{width:44px;height:44px}
+.ach{grid-template-columns:44px 1fr}

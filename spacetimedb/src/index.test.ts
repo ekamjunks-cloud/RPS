@@ -23,6 +23,8 @@ function setup() {
       game: () => (mod.myGame as any)(test.viewContext(auth))[0],
       hand: () => ((mod.myHand as any)(test.viewContext(auth)) as any[]).sort((a, b) => a.pos - b.pos),
       log: () => ((mod.myLog as any)(test.viewContext(auth)) as any[]).sort((a, b) => a.n - b.n),
+      /** queued players search for a few seconds first: runs the timers until this player is in a live match */
+      waitMatch: () => { for (let i = 0; i < 12 && !(c.game() && !c.game().over); i++) fireNext(); },
       /** tutorial + one practice match, played to the end */
       qualify: () => { call(mod.finishTutorial); call(mod.startPractice); playOut([c]); call(mod.leaveGame); },
     };
@@ -312,7 +314,7 @@ describe('a match', () => {
     const { client, fireNext } = setup();
     const a = client('a'), b = client('b');
     for (const [p, n] of [[a, 'anna'], [b, 'bert']] as const) { p.call(mod.claimName, { name: n }); p.qualify(); }
-    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    a.call(mod.joinQueue); b.call(mod.joinQueue); b.waitMatch();
     expect(a.game()).toMatchObject({ mode: 'ranked', phase: 'intro' });
     while (a.game().phase !== 'prep') fireNext();
     a.call(mod.ready); b.call(mod.ready);
@@ -350,7 +352,7 @@ describe('guest-only mode (accounts switched off)', () => {
       const a = client('a'), b = client('b');
       expect(() => a.call(mod.joinQueue)).toThrow('Finish the tutorial');
       a.qualify(); b.qualify();
-      a.call(mod.joinQueue); b.call(mod.joinQueue);
+      a.call(mod.joinQueue); b.call(mod.joinQueue); b.waitMatch();
       expect(a.game().rated).toBe(true);
       playOut([a, b]);
       expect(a.me().isGuest).toBe(true);
@@ -371,7 +373,7 @@ describe('ranked play', () => {
 
   it('matches two queued accounts, updates ratings and the leaderboard', () => {
     const { test, a, b, playOut } = twoAccounts();
-    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    a.call(mod.joinQueue); b.call(mod.joinQueue); b.waitMatch();
     expect(a.game().rated && b.game().rated).toBe(true);
     expect(a.game().oppName).toBe('bob');
     expect(a.me().waiting).toBe('');
@@ -391,7 +393,7 @@ describe('ranked play', () => {
     const changes: number[] = [];
     for (let i = 0; i < 6; i++) {
       const before = a.me().rating;
-      a.call(mod.joinQueue); b.call(mod.joinQueue);
+      a.call(mod.joinQueue); b.call(mod.joinQueue); b.waitMatch();
       playOut([a, b]);
       if (a.game().endResult !== 'draw') changes.push(Math.abs(a.me().rating - before));
       a.call(mod.leaveGame); b.call(mod.leaveGame);
@@ -401,14 +403,28 @@ describe('ranked play', () => {
     expect(changes[changes.length - 1]).toBeLessThanOrEqual(5);
   });
 
-  it('starts a bot match after 15 seconds alone in the queue', () => {
+  it('starts a bot match after about 13.5 seconds alone in the queue', () => {
     const { test, a, fireNext } = twoAccounts();
     const start = test.clock.now();
     a.call(mod.joinQueue);
     while (!a.game()) fireNext();
-    expect(test.clock.now().since(start).millis).toBe(15000);
+    expect(test.clock.now().since(start).millis).toBe(13500); // 3.5s first search, then two 5s retries
     expect(a.game()).toMatchObject({ oppIsBot: true, rated: false, mode: 'bot' });
     expect(a.me().waiting).toBe('');
+  });
+
+  it('keeps a player searching for 3.5 seconds even when an opponent is already waiting', () => {
+    const { test, a, b, fireNext } = twoAccounts();
+    a.call(mod.joinQueue);
+    test.clock.advance(TimeDuration.fromMillis(10000));
+    b.call(mod.joinQueue);
+    expect(b.game()).toBeUndefined();               // not straight into a match
+    expect(b.me().waiting).toBe('queue');
+    const joined = test.clock.now();
+    b.waitMatch();
+    expect(b.game()).toMatchObject({ mode: 'ranked', phase: 'intro' });
+    expect(test.clock.now().since(joined).millis).toBeGreaterThanOrEqual(3500);
+    void fireNext;
   });
 
   it('removes a player who cancels or disconnects from the queue', () => {
@@ -523,7 +539,7 @@ describe('rematch', () => {
     const a = s.client('a'), b = s.client('b');
     a.call(mod.claimName, { name: 'alice' }); b.call(mod.claimName, { name: 'bob' });
     a.qualify(); b.qualify();
-    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    a.call(mod.joinQueue); b.call(mod.joinQueue); b.waitMatch();
     s.playOut([a, b]);
     a.call(mod.rematch); b.call(mod.rematch);
     expect(a.game()).toMatchObject({ mode: 'ranked', rated: true, over: false });
@@ -719,7 +735,7 @@ describe('seasons', () => {
     const a = client('a'), b = client('b');
     a.call(mod.claimName, { name: 'alice' }); b.call(mod.claimName, { name: 'bob' });
     a.qualify(); b.qualify();
-    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    a.call(mod.joinQueue); b.call(mod.joinQueue); b.waitMatch();
     playOut([a, b]);
     const ra = a.me().rating, rb = b.me().rating;
     expect(((mod.leaderboard as any)(test.anonymousViewContext()) as any[])).toHaveLength(2);
@@ -953,7 +969,7 @@ describe('XP and card style unlocks', () => {
     x.call(mod.claimName, { name: 'xena' }); y.call(mod.claimName, { name: 'yuri' });
     x.qualify(); y.qualify();
     const before = xpOf(s.test, x);
-    x.call(mod.joinQueue); y.call(mod.joinQueue);
+    x.call(mod.joinQueue); y.call(mod.joinQueue); y.waitMatch();
     s.playOut([x, y]);
     const res = x.game().endResult;
     expect(x.game().xpGain).toBe(res === 'win' ? 45 : res === 'draw' ? 23 : 15);
@@ -1002,7 +1018,7 @@ describe('rank rewards', () => {
     for (const [p, n] of [[a, 'anna'], [b, 'bert']] as const) { p.call(mod.claimName, { name: n }); p.qualify(); }
     expect(items(test, a)).not.toContain('aura:silver');
     for (const p of [a, b]) test.db.player.identity.update({ ...test.db.player.identity.find(p.me().identity)!, rating: 1095 });
-    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    a.call(mod.joinQueue); b.call(mod.joinQueue); b.waitMatch();
     playOut([a, b]);
     const winner = a.game().endResult === 'win' ? a : b.game().endResult === 'win' ? b : null;
     if (!winner) return; // a draw moves nobody over the line
@@ -1118,8 +1134,9 @@ describe('unranked matches', () => {
     c.call(mod.joinQueue);        // ranked: must not be paired with a
     expect(a.game()).toBeUndefined();
     expect(a.me()).toMatchObject({ waiting: 'queue', casual: true });
-    b.call(mod.joinCasual);
+    b.call(mod.joinCasual); b.waitMatch();
     expect(a.game()).toMatchObject({ mode: 'casual', rated: false });
+    expect(c.game()).toBeUndefined(); // the ranked player is still searching
     playOut([a, b]);
     const g = a.game();
     expect(g.ratingChange).toBe(0);
@@ -1136,7 +1153,7 @@ describe('weekly leaderboard', () => {
     const a = client('a'), b = client('b');
     a.call(mod.claimName, { name: 'anna' }); b.call(mod.claimName, { name: 'bert' });
     a.qualify(); b.qualify();
-    a.call(mod.joinQueue); b.call(mod.joinQueue);
+    a.call(mod.joinQueue); b.call(mod.joinQueue); b.waitMatch();
     playOut([a, b]);
     const r = a.game().endResult;
     const board = () => (mod.weeklyBoard as any)(test.viewContext(a.auth)) as any[];

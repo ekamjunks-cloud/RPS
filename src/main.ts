@@ -7,17 +7,17 @@ import { KINDS, ICON, face, mini, TROPHY, SKULL, SHAKE, LOCK, CHAT, GEAR, EXIT, 
 import { sfx, unlock, isMuted, setMuted, isMusicOn, setMusicOn, setTrack } from './sfx';
 import { burstAt, vibrate, winEffect, setReducedMotion, setVibration } from './fx';
 import { drawResultCard } from './card';
-import { tierOf, nextTier, tierBadge, TIERS, ACHIEVEMENTS, achievementOf, today, msToNextDay, msToSeasonEnd, seasonName, shortTime } from './ranks';
+import { tierOf, nextTier, tierBadge, TIERS, ACHIEVEMENTS, achievementOf, achIcon, today, msToNextDay, msToSeasonEnd, seasonName, shortTime } from './ranks';
 import { addSprite } from './sprite';
 import {
   ITEM, ITEMS, COINS, XP, XP_MULT, COIN_MULT, K_STEPS, REACTION_SLOTS, PHRASE_SLOTS, levelOf, nameOf, descOf, itemsOf, KIND_LABEL, avatarHtml, reactionSvg, reactionName,
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.4.2';
+const VERSION = '2.5';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
-const SUPPORT_EMAIL = '';
+const SUPPORT_EMAIL = 'support@rps10.online';
 addSprite();
 
 const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'https://maincloud.spacetimedb.com';
@@ -743,7 +743,7 @@ function checkAchievements() {
     achSeen.add(k); achNew.push(k);
     if (RANK_ORDER.includes(k as any)) { rankUpQueue.push(k); setTimeout(showRankUp, 1700); continue; }
     const a = achievementOf(k);
-    if (a) popup({ icon: `<span class="apEmo">${a.icon}</span>`, label: 'Achievement unlocked', title: a.name, sub: a.how });
+    if (a) popup({ icon: achIcon(a.key, 44), label: 'Achievement unlocked', title: a.name, sub: a.how });
   }
 }
 
@@ -867,7 +867,7 @@ function renderStats() {
     html = `<h4>Awards <span class="sub">${got.size} of ${ACHIEVEMENTS.length}</span></h4><div class="achGrid">` + ACHIEVEMENTS.map(a => {
       const on = got.has(a.key);
       const aura = ITEMS.find(i => i.ach === a.key);
-      return `<div class="ach${on ? ' on' : ''}" title="${esc(a.how)}"><span class="achIc">${on ? a.icon : '🔒'}</span><b>${esc(a.name)}</b><small>${esc(a.how)}${aura ? ` · unlocks the ${nameOf(aura.id)} aura` : ''}</small></div>`;
+      return `<div class="ach${on ? ' on' : ''}" title="${esc(a.how)}"><span class="achIc">${achIcon(a.key, 40, !on)}</span><b>${esc(a.name)}</b><small>${esc(a.how)}${aura ? ` · unlocks the ${nameOf(aura.id)} aura` : ''}</small></div>`;
     }).join('') + '</div>';
   } else {
     const hist = Array.from(conn.db.myHistory.iter()).sort((a, b) => (a.id < b.id ? 1 : -1));
@@ -1336,7 +1336,7 @@ function showEnd() {
   if (G.rated) chips.push(`<span class="${G.ratingChange >= 0 ? 'up' : 'down'}">Rating ${G.ratingChange >= 0 ? '+' : ''}${G.ratingChange}</span>`);
   if (me && !unlockedBefore && me.practiceDone && G.opp.isBot && e.reason === 'points') chips.push('<span class="up">Online play unlocked</span>');
   if (G.mode === 'daily') { const st = dailyState(); if (st.streak) chips.push(`${st.streak}-day streak`); }
-  for (const k of achNew) { const a = achievementOf(k); if (a) chips.push(`<span class="up">${a.icon} ${esc(a.name)}</span>`); }
+  for (const k of achNew) { const a = achievementOf(k); if (a) chips.push(`<span class="up achChip">${achIcon(a.key, 18)} ${esc(a.name)}</span>`); }
   $('endChips').innerHTML = chips.map(c => `<span class="ec">${c}</span>`).join('');
   // the winner's win effect: yours at full strength, or theirs dimmed with their name on it
   const fxLbl = $('fxLabel');
@@ -2042,6 +2042,7 @@ function renderSettings() {
   $('setTeam').classList.toggle('hide', !(me && (me.isAdmin || me.isMod)));
   $('setVer').textContent = `RPS 10 · version ${VERSION}`;
   $('setContact').href = SUPPORT_EMAIL ? `mailto:${SUPPORT_EMAIL}` : './privacy.html#contact';
+  $('setContactSub').textContent = SUPPORT_EMAIL || 'Use Report a bug';
 }
 $('setSound').onchange = () => { setMuted(!$('setSound').checked); };
 $('setMusic').onchange = () => { setMusicOn($('setMusic').checked); };
@@ -2243,7 +2244,7 @@ function renderProfile() {
   html += `<h4>Last 10 matches <span class="sub">Newest first</span></h4><div class="last10">${form || '<span class="muted">No matches yet.</span>'}</div>`
     + `<div class="pfRow">${p.favourite ? `<div class="pfMini">${mini(p.favourite)}<span><b>${p.favourite[0].toUpperCase() + p.favourite.slice(1)}</b>plays it ${p.favouritePct}%</span></div>` : ''}`
     + `<div class="pfMini">${skinTrio(p.skin, 'xs')}<span><b>${esc(nameOf('skin:' + p.skin))}</b>card style</span></div></div>`
-    + `<h4>Awards <span class="sub">${got.size} of ${ACHIEVEMENTS.length}</span></h4>${got.size ? `<div class="pfAwards">${ACHIEVEMENTS.filter(a => got.has(a.key)).map(a => `<span class="pfAw on" title="${esc(a.name)}: ${esc(a.how)}" aria-label="${esc(a.name)}">${a.icon}</span>`).join('')}</div>` : '<p class="muted small">No awards yet.</p>'}`
+    + `<h4>Awards <span class="sub">${got.size} of ${ACHIEVEMENTS.length}</span></h4>${got.size ? `<div class="pfAwards">${ACHIEVEMENTS.filter(a => got.has(a.key)).map(a => `<span class="pfAw on" title="${esc(a.name)}: ${esc(a.how)}" aria-label="${esc(a.name)}">${achIcon(a.key, 40)}</span>`).join('')}</div>` : '<p class="muted small">No awards yet.</p>'}`
     + `<p class="muted small ctr">Playing since ${new Date(microsMs(p.since)).toLocaleDateString('en', { month: 'long', year: 'numeric' })}</p>`;
   const foot = (lastOpp ? '<button class="linkBtn" type="button" data-act="report">Report</button>' : '')
     + (p.relation === 'friends' && fr ? `<button class="linkBtn red" type="button" data-act="unfriend" data-id="${fr.identity.toHexString()}">Remove friend</button>` : '');

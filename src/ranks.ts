@@ -66,6 +66,58 @@ export const ACHIEVEMENTS: Achievement[] = [
 ];
 export const achievementOf = (key: string) => ACHIEVEMENTS.find(a => a.key === key);
 
+// ---------- award medals (design board 30, A): bronze for everyday awards, silver for harder, gold for the big ones ----------
+const MEDAL_TIER: Record<string, 'br' | 'si' | 'go' | 'di'> = {
+  first_win: 'br', friend: 'br', rematch: 'br', ranked_win: 'br', daily_win: 'br',
+  clutch: 'si', streak5: 'si', silver: 'si',
+  perfect: 'go', comeback: 'go', full_house: 'go', wins50: 'go', daily7: 'go', gold: 'go',
+  diamond: 'di',
+};
+const W = 'fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
+const T = (t: string, size: number, y = 17.5) => `<text x="12" y="${y}" text-anchor="middle" font-family="Lilita One, sans-serif" font-size="${size}" fill="#fff">${t}</text>`;
+const GLYPH: Record<string, string> = {
+  first_win: `<path d="M7 3.5h10v4.5a5 5 0 0 1-10 0Z M5 4.5H3v2a3.5 3.5 0 0 0 3.5 3.5 M19 4.5h2v2a3.5 3.5 0 0 1-3.5 3.5 M12 13v4 M8 20.5h8 M9.5 17h5v3.5h-5Z" ${W}/>`,
+  perfect: T('10', 15) + '<path d="M4 20.5h16" stroke="#fff" stroke-width="2" stroke-linecap="round"/>',
+  comeback: `<path d="M3 18 8 13l3.5 3L20 7.5 M14.5 7.5H20V13" ${W} stroke-width="2.4"/>`,
+  clutch: `<circle cx="12" cy="12" r="8" ${W}/><circle cx="12" cy="12" r="3.5" ${W}/><path d="M12 1.5v4 M12 18.5v4 M1.5 12h4 M18.5 12h4" ${W}/>`,
+  full_house: `<rect x="3.5" y="6" width="9" height="13" rx="2" ${W} transform="rotate(-12 8 12.5)"/><rect x="11" y="5" width="9" height="13" rx="2" fill="#fff" fill-opacity=".25" stroke="#fff" stroke-width="2.2" transform="rotate(10 15.5 11.5)"/>`,
+  streak5: `<path d="M12 2.5c1 4.2 6 5.6 6 11a6 6 0 0 1-12 0c0-3.2 2-4.6 2.6-7.4 1.3 1.3 2.2 2.6 2.8 4.4C13.5 8.6 12.8 5.2 12 2.5Z" ${W} stroke-width="2"/><path d="M12 21a2.6 2.6 0 0 1-2.6-2.6c0-1.7 1.6-2.4 2.6-4.4 1 2 2.6 2.7 2.6 4.4A2.6 2.6 0 0 1 12 21Z" fill="#fff"/>`,
+  wins50: T('50', 14, 16) + `<path d="M5 19.5l3.5 2 3.5-2 3.5 2 3.5-2" ${W} stroke-width="1.8"/>`,
+  ranked_win: `<path d="M4 4l11 11 M15 15l-2 2 M15 15l2-2 M20 4 9 15 M9 15l2 2 M9 15l-2-2 M4 20l3-3 M20 20l-3-3" ${W}/>`,
+  silver: `<path d="M12 2.5 19.5 5.5v6c0 5-3.4 8.2-7.5 10-4.1-1.8-7.5-5-7.5-10v-6Z" ${W} stroke-width="2"/><path d="M8.5 11 12 8.5l3.5 2.5 M8.5 15 12 12.5l3.5 2.5" ${W} stroke-width="1.9"/>`,
+  gold: `<path d="M3.5 18 2.5 7l5.5 4.5L12 4.5l4 7L21.5 7l-1 11Z M4 21h16" ${W}/><circle cx="12" cy="14" r="1.6" fill="#fff"/>`,
+  diamond: `<path d="M6.5 4h11l4 5.5L12 21 2.5 9.5Z M2.5 9.5h19 M9 4 7.5 9.5 12 21 M15 4l1.5 5.5L12 21" ${W} stroke-width="1.9"/>`,
+  friend: `<circle cx="8.5" cy="8" r="3.2" ${W} stroke-width="2.1"/><circle cx="16" cy="9" r="2.6" ${W} stroke-width="2"/><path d="M2.5 19.5c0-3.4 2.7-5.7 6-5.7s6 2.3 6 5.7 M15 14.3c3.3-.3 6.5 1.7 6.5 5.2" ${W} stroke-width="2.1"/>`,
+  rematch: `<path d="M4 11a8 8 0 0 1 13.7-5.6L20 7.5 M20 3v4.5h-4.5 M20 13a8 8 0 0 1-13.7 5.6L4 16.5 M4 21v-4.5h4.5" ${W}/>`,
+  daily_win: `<rect x="3.5" y="5" width="17" height="15.5" rx="2.5" ${W} stroke-width="2.1"/><path d="M3.5 10h17 M8 3v4 M16 3v4" ${W} stroke-width="2.1"/><path d="M8.5 15l2.5 2.5 4.5-4.5" ${W} stroke-width="2.1"/>`,
+  daily7: `<rect x="3.5" y="5" width="17" height="15.5" rx="2.5" ${W} stroke-width="2.1"/><path d="M3.5 10h17 M8 3v4 M16 3v4" ${W} stroke-width="2.1"/>` + T('7', 8.5, 18.6),
+};
+const LOCK = `<rect x="5" y="11" width="14" height="9.5" rx="2.5" ${W}/><path d="M8 11V8a4 4 0 0 1 8 0v3" ${W}/>`;
+const MEDAL_SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true"><defs>
+<linearGradient id="amBr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc49b"/><stop offset="1" stop-color="#9c5424"/></linearGradient>
+<linearGradient id="amSi" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#7a82a8"/></linearGradient>
+<linearGradient id="amGo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset="1" stop-color="#d98a00"/></linearGradient>
+<linearGradient id="amDi" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e6fdff"/><stop offset=".45" stop-color="#7fe3ff"/><stop offset="1" stop-color="#6f7bff"/></linearGradient>
+<linearGradient id="amGrey" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5d5790"/><stop offset="1" stop-color="#2b2660"/></linearGradient>
+<symbol id="am-ribbon" viewBox="0 0 64 64"><path d="M20 38 13 60l9-4 5 7 6-21Z" fill="#ff5a7a"/><path d="M44 38l7 22-9-4-5 7-6-21Z" fill="#6f7bff"/></symbol>
+</defs></svg>`;
+if (typeof document !== 'undefined' && !document.getElementById('amBr')) {
+  const add = () => document.body.insertAdjacentHTML('afterbegin', MEDAL_SPRITE);
+  if (document.body) add(); else document.addEventListener('DOMContentLoaded', add);
+}
+const RIM: Record<string, string> = { br: '#5a2a0c', si: '#4a5175', go: '#7a4700', di: '#22206e' };
+/** An award's medal, `size` pixels across. Locked: a grey medal with a lock, and no ribbon. */
+export function achIcon(key: string, size = 48, locked = false): string {
+  const tier = MEDAL_TIER[key] || 'br';
+  const name = achievementOf(key)?.name || key;
+  if (locked) return `<svg class="achSvg locked" width="${size}" height="${size}" viewBox="0 0 64 64" role="img" aria-label="${name} (not earned yet)"><circle cx="32" cy="29" r="22" fill="url(#amGrey)" stroke="#1d1850" stroke-width="2.5"/><g transform="translate(21 18) scale(.92)" opacity=".6">${LOCK}</g></svg>`;
+  const fill = { br: 'amBr', si: 'amSi', go: 'amGo', di: 'amDi' }[tier];
+  return `<svg class="achSvg" width="${size}" height="${size}" viewBox="0 0 64 64" role="img" aria-label="${name}"><use href="#am-ribbon"/>`
+    + `<circle cx="32" cy="27" r="22" fill="url(#${fill})" stroke="${RIM[tier]}" stroke-width="2.5"/>`
+    + `<circle cx="32" cy="27" r="16.5" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="1.5"/>`
+    + `<g transform="translate(20 15)" style="filter:drop-shadow(0 1px 0 rgba(0,0,0,.3))">${GLYPH[key] || GLYPH.first_win}</g></svg>`;
+}
+
 const DAY_MS = 86_400_000;
 /** The UTC day number the daily challenge uses. */
 export const today = () => Math.floor(Date.now() / DAY_MS);
