@@ -591,6 +591,19 @@ describe('chat', () => {
     expect(chat(a).map(m => m.body)).toEqual(['nice', 'lol', 'whoa', 'grr']);
   });
 
+  it('clears an "online" that got stuck, but not for someone in a match', () => {
+    const { test, client } = setup();
+    const a = client('stuck'), b = client('playing');
+    // a server restart that never ran their disconnects: both still look connected
+    b.call(mod.finishTutorial); b.call(mod.startPractice);
+    expect(Array.from(test.db.player.iter()).filter(p => p.conns === 1).length).toBe(2);
+    test.clock.set(new Timestamp(test.clock.now().microsSinceUnixEpoch + 25n * 3600n * 1_000_000n));
+    test.withReducerTx(TestAuth.internal(), ctx => (mod.sweep as any)(ctx, { arg: {} }));
+    const conns = (who: any) => Array.from(test.db.player.iter()).find(p => p.name === who.me().name)!.conns;
+    expect(conns(a)).toBe(0); // reset
+    expect(conns(b)).toBe(1); // in a live match: left alone
+  });
+
   it('makes a player wait 3 seconds between messages', () => {
     const { a, b, test } = room();
     a.call(mod.sendChat, { kind: 'emoji', body: 'whoa' });

@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.6.3';
+const VERSION = '2.6.4';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = 'support@rps10.online';
@@ -548,8 +548,6 @@ $('btnGoogle').onclick = () => { pendingQueue = false; if (!google && googleOn) 
 $('btnEmailIn').onclick = () => { pendingQueue = false; openAcct('form', 'new'); };
 
 const MAIL_ICON = '<svg class="gG mailG" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="3" fill="none" stroke="#2a83f0" stroke-width="2.2"/><path d="m4 7.5 8 6 8-6" fill="none" stroke="#2a83f0" stroke-width="2.2" stroke-linejoin="round"/></svg>';
-/** Your own avatar with your aura. */
-function avatar(el: any, size = 48) { if (me) el.innerHTML = avatarHtml(me.avatar, me.frame, size, me.name); }
 /** The Account rows in Settings. */
 function renderAccount() {
   if (!me) return;
@@ -1699,7 +1697,7 @@ $('btnAgain').onclick = () => {
 
 function pressAction() {
   if (!G) return;
-  if (G.phase === 'prep' && !G.you.ready) { sfx.ready(); return call('ready'); }
+  if (G.phase === 'prep' && !G.you.ready) { sfx.ready(); call('ready'); return; }
   if (G.phase === 'pick' && localSel && !G.you.locked) {
     lockPending = `${G.gameId}:${G.round}`;
     G.you.locked = true; renderGame(false, false); // show it at once; the server confirms
@@ -1790,6 +1788,8 @@ function renderHand(deal = false) {
       b.dataset.id = c.id;
       b.setAttribute('aria-label', c.t);
       b.addEventListener('pointerdown', e => startDrag(e, b));
+      // a keyboard or screen-reader "activate" arrives as a click with no pointer (detail 0): pick that card
+      b.addEventListener('click', e => { if ((e as MouseEvent).detail === 0) activateCard(b); });
       hand.appendChild(b);
     });
   }
@@ -1807,6 +1807,12 @@ function selectCard(id: string) {
   sfx.select();
   call('selectCard', { cardId: BigInt(id) }).finally(() => { selInFlight = Math.max(0, selInFlight - 1); });
   renderGame(false, false);
+}
+/** Keyboard and screen readers: the first activation picks the card, the next one (on the same card) locks it in. */
+function activateCard(el: HTMLElement) {
+  if (!G) return;
+  if (G.phase === 'pick' && !G.you.locked && localSel !== el.dataset.id) { selectCard(el.dataset.id!); return; }
+  pressAction();
 }
 function startDrag(e: PointerEvent, el: HTMLElement) {
   if (!G || G.phase === 'over' || e.button > 0) return;
@@ -1940,7 +1946,8 @@ function syncChat(firstOfGame: boolean) {
   const last = rows.length ? rows[rows.length - 1]!.id : 0n;
   if (firstOfGame || chatGame !== G.gameId) {
     // a game we just arrived in: don't replay what was said before
-    chatGame = G.gameId; chatSeen = last; unread = 0; chatSig = ''; chatCoolUntil = 0; renderChatCool();
+    // chatSig gets a value no real list can have, so the panel is always redrawn (an empty chat would otherwise match '' and keep the last match's messages on screen)
+    chatGame = G.gameId; chatSeen = last; unread = 0; chatSig = '\u0000new'; chatCoolUntil = 0; renderChatCool();
     hideBubble('bubYou'); hideBubble('bubOpp');
   } else {
     for (const m of rows) {
@@ -2675,8 +2682,10 @@ document.addEventListener('keydown', e => {
     selectCard(localHand[next].id);
     e.preventDefault();
   } else if (e.key === 'Enter' || e.key === ' ') {
-    if (document.activeElement && (document.activeElement as HTMLElement).closest('.card')) (document.activeElement as HTMLElement).blur();
-    pressAction();
+    // a card focused with the keyboard (Tab) is picked; one focused by a mouse click isn't, so number keys + Enter still lock in
+    const el = document.activeElement as HTMLElement | null, focused = el && el.closest('#hand .card') as HTMLElement | null;
+    if (focused && focused.matches(':focus-visible')) activateCard(focused);
+    else { if (focused) focused.blur(); pressAction(); }
     e.preventDefault();
   }
 });

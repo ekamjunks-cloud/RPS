@@ -488,7 +488,6 @@ type GameRow = NonNullable<ReturnType<Ctx['db']['game']['id']['find']>>;
 // ---------- small helpers ----------
 const EPOCH = new Timestamp(0n);
 const addMs = (ts: Timestamp, ms: number) => new Timestamp(ts.microsSinceUnixEpoch + BigInt(Math.round(ms)) * 1000n);
-const isSet = (ts: Timestamp) => ts.microsSinceUnixEpoch !== 0n;
 
 /** True when the caller is signed in with Google through your Firebase project. */
 function isGoogle(ctx: Ctx): boolean {
@@ -722,7 +721,6 @@ function logAdmin(ctx: Ctx, action: string, target: string, detail = '') {
 const nowMicros = (ctx: Ctx) => ctx.timestamp.microsSinceUnixEpoch;
 const HOUR_MICROS = 3600n * 1_000_000n;
 /** Suspended right now, for good or for a while. */
-const isBanned = (p: { banned: boolean; banUntil: bigint }, now: bigint) => p.banned || p.banUntil > now;
 function bumpDaily(ctx: Ctx, day: number, plays: number, wins: number) {
   const row = ctx.db.dailyStat.day.find(day);
   if (row) ctx.db.dailyStat.day.update({ ...row, plays: row.plays + plays, wins: row.wins + wins });
@@ -1915,6 +1913,12 @@ export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
 /** Housekeeping every few hours: removes guest profiles nobody has used for 30 days. */
 export const sweep = spacetimedb.reducer({ onSchedule: sweepTimer }, { arg: sweepTimer.rowType }, ctx => {
   const cutoff = ctx.timestamp.microsSinceUnixEpoch - GUEST_IDLE_MICROS;
+  // "online" can stick if the server ever restarts without running disconnects: nobody stays connected for a
+  // day without reconnecting, so reset those counts (a real disconnect later just stays at 0)
+  const stale = ctx.timestamp.microsSinceUnixEpoch - DAY_MICROS;
+  for (const p of Array.from(ctx.db.player.iter())) {
+    if (p.conns > 0 && p.lastSeen.microsSinceUnixEpoch < stale && !liveGame(ctx, p)) ctx.db.player.identity.update({ ...p, conns: 0 });
+  }
   for (const p of Array.from(ctx.db.player.iter())) {
     if (p.isGuest && p.conns === 0 && p.gameId === 0n && p.lastSeen.microsSinceUnixEpoch < cutoff) {
       ctx.db.player.identity.delete(p.identity);

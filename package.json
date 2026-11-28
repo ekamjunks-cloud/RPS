@@ -13,7 +13,7 @@
     "publish:local": "spacetime publish rps10 --module-path spacetimedb --server local"
   },
   "dependencies": {
-    "firebase": "^13.3.0",
+    "firebase": "^13.4.0",
     "spacetimedb": "^2.15.0"
   },
   "devDependencies": {
