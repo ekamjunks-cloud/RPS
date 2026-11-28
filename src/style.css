@@ -1866,3 +1866,9 @@ body.chatCool #chatGap{color:var(--gold)}
 .gBar .btn.action{font-size:22px;letter-spacing:.6px;border-radius:18px}
 .gBar .btn.action.lockIn:not(:disabled){box-shadow:0 5px 0 var(--cd),0 0 24px rgba(255,200,61,.35),inset 0 1px 0 rgba(255,255,255,.25)}
 @media (max-height:740px){.gBar .gBtn{width:50px}}
+
+/* "Updating RPS 10…" while the game reloads itself into a new version */
+.updating{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;gap:12px;background:rgba(10,9,32,.92);color:var(--text);font-family:var(--display);font-size:22px}
+.updating.hide{display:none}
+.updSpin{width:26px;height:26px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:var(--gold);animation:updSpin .8s linear infinite}
+@keyframes updSpin{to{transform:rotate(360deg)}}

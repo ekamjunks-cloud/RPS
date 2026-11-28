@@ -14,7 +14,7 @@ import {
   ticketHtml, titleHtml, backHtml, skinTrio, itemArt, ROAD, nextUnlock, reactionsInPack, phrasesInPack, xpForLevel, type ItemKind,
 } from './catalog';
 
-const VERSION = '2.6.2';
+const VERSION = '2.6.3';
 const REPORT_REASONS = ['Offensive name', 'Spam in chat', 'Stalling or quitting', 'Other'];
 // Contact us / privacy policy address. Put your support email here before launch.
 const SUPPORT_EMAIL = 'support@rps10.online';
@@ -183,7 +183,7 @@ async function connect() {
           tables.myFriends, tables.myInvites, tables.watchGame, tables.watchLog,
           tables.myItems, tables.serverInfo, tables.weeklyBoard, tables.myRank, tables.friendsBoard, tables.myRecent, tables.playerProfile]);
     })
-    .onAutomaticReconnect(() => { if (my === gen) net(null); })
+    .onAutomaticReconnect(() => { if (my === gen) { net(null); watchForUpdate(); } })
     .onDisconnect(() => { if (my === gen && connected) net('Reconnecting…'); })
     .onConnectError(() => {
       if (my !== gen) return;
@@ -578,6 +578,7 @@ function toLobby() {
   renderMe(); renderBoard();
   show('scrLobby');
   setTrack('lobby');
+  setTimeout(maybeUpdateNow, 1500); // a new version came out during the match: move onto it now
 }
 let googleOn = false; // Firebase values are present
 authReady.then(a => { googleOn = !!(a && a.configured); renderMe(); });
@@ -2712,21 +2713,61 @@ function flashTitle() {
   titleTimer = setInterval(() => { on = !on; document.title = on ? 'Your turn! · RPS 10' : TITLE; }, 900);
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearInterval(titleTimer); titleTimer = 0; document.title = TITLE; } });
-// a new version: offered in the lobby, never mid-match
-let newVersion = false;
-async function checkVersion() {
-  try {
-    const r = await fetch('./version.json', { cache: 'no-store' });
-    const v = (await r.json()).v;
-    if (v && v !== VERSION && !newVersion) { newVersion = true; renderUpdate(); }
-  } catch {}
+// ---------- new versions: the game moves itself onto them ----------
+// 1. After reconnecting (a server update disconnects everyone), it watches for the new website for 3 minutes and
+//    reloads into it. The match lives on the server, so a player mid-match lands straight back in it.
+// 2. If an update from the server can't be read (old code meeting a newer server), it reloads, at most once a minute.
+// 3. Sitting idle in the lobby, it reloads quietly. Mid-match it never reloads just because a new website is out.
+// A reload never repeats for the same version: if the page is still old afterwards, the Refresh bar shows instead.
+let newVersion = false, latest = '';
+const RELOAD_KEY = 'rps10_reloadedFor', READ_ERR_KEY = 'rps10_readErrAt';
+const ss = { get: (k: string) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k: string, v: string) => { try { sessionStorage.setItem(k, v); } catch {} } };
+async function latestVersion(): Promise<string | null> {
+  try { const r = await fetch('./version.json', { cache: 'no-store' }); return (await r.json()).v || null; } catch { return null; }
 }
+function reloadInto(v: string) {
+  if (ss.get(RELOAD_KEY) === v) { newVersion = true; renderUpdate(); return; } // tried already: let the player tap
+  ss.set(RELOAD_KEY, v);
+  $('updating').classList.remove('hide');
+  setTimeout(() => location.reload(), 400);
+}
+const idleInLobby = () => showing('scrLobby') && !document.querySelector('.overlay:not(.hide)') && !document.body.classList.contains('chatOpen');
+function maybeUpdateNow() { if (newVersion && latest && idleInLobby()) reloadInto(latest); }
+async function checkVersion() {
+  const v = await latestVersion();
+  if (v && v !== VERSION) { latest = v; if (!newVersion) { newVersion = true; renderUpdate(); } maybeUpdateNow(); }
+}
+let watchTimer: any = 0;
+function watchForUpdate() {
+  clearInterval(watchTimer);
+  const until = Date.now() + 3 * 60 * 1000;
+  const tick = async () => {
+    if (Date.now() > until) { clearInterval(watchTimer); return; }
+    const v = await latestVersion();
+    if (v && v !== VERSION) { clearInterval(watchTimer); latest = v; reloadInto(v); }
+  };
+  tick(); watchTimer = setInterval(tick, 15000);
+}
+/** The SDK couldn't read a message from the server: this page's code is older than the server. */
+async function onReadError() {
+  const v = await latestVersion();
+  if (v && v !== VERSION) return reloadInto(v);
+  const last = Number(ss.get(READ_ERR_KEY) || 0);
+  if (Date.now() - last < 60_000) { newVersion = true; renderUpdate(); return; } // just reloaded for this: offer the bar
+  ss.set(READ_ERR_KEY, String(Date.now()));
+  $('updating').classList.remove('hide');
+  setTimeout(() => location.reload(), 400);
+}
+const isReadError = (r: any) => r instanceof RangeError && /DataView|BinaryReader|deserial|parseRow/i.test(String(r.stack || r.message || ''));
+addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => { if (isReadError(e.reason)) onReadError(); });
+addEventListener('error', (e: ErrorEvent) => { if (isReadError(e.error)) onReadError(); });
 function renderUpdate() {
   const bar = $('updateBar');
   bar.classList.toggle('hide', !newVersion);
 }
 $('updateBar').addEventListener('click', () => location.reload());
 if (import.meta.env.PROD) { setInterval(checkVersion, 5 * 60 * 1000); addEventListener('focus', checkVersion); }
+if (import.meta.env.DEV) (window as any).__checkVersion = checkVersion;
 
 // ---------- boot ----------
 (async () => {
