@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>RPS 10 — 1v1 rock paper scissors with a 10-card hand</title>
+<title>RPS 10: Rock Paper Scissors Online, 1v1 with a 10-Card Hand</title>
 <meta name="description" content="Rock paper scissors, but you only get 10 cards. Outthink a real opponent in a 2-minute 1v1 match. Free, plays in your browser.">
 <meta name="theme-color" content="#0d0b22">
 <meta property="og:type" content="website">
@@ -19,7 +19,16 @@
 <meta name="twitter:title" content="RPS 10">
 <meta name="twitter:description" content="Rock paper scissors with a 10-card hand. Outthink a real opponent in a 2-minute 1v1 match.">
 <meta name="twitter:image" content="%VITE_SITE_URL%og-image.png">
+<link rel="canonical" href="https://rps10.online/">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebSite","@id":"https://rps10.online/#site","name":"RPS 10","alternateName":["RPS10","rps10.online"],"url":"https://rps10.online/"},
+{"@type":"VideoGame","@id":"https://rps10.online/#game","name":"RPS 10","url":"https://rps10.online/","description":"A free online 1v1 rock paper scissors game where each player gets only 10 cards: 3 of two kinds and 4 of the third. Count, bluff and lock in. 2-minute matches, ranked seasons, friend rooms and a daily challenge.","image":"https://rps10.online/og-image.png","genre":["Strategy","Card game","Casual","Multiplayer"],"gamePlatform":["Web browser","Android","iOS","Windows","macOS"],"applicationCategory":"GameApplication","operatingSystem":"Any","playMode":["MultiPlayer","SinglePlayer"],"isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"sameAs":["https://www.instagram.com/rps10.online/"]}
+]}
+</script>
+<link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-96.png" sizes="96x96" type="image/png">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,6 +40,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
+<h1 class="srOnly">RPS 10: rock paper scissors online with a 10-card hand</h1>
 
 <div class="bgfx" aria-hidden="true">
   <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span>
@@ -492,6 +502,7 @@
         <div class="gh">Help</div>
         <div class="grp">
           <button class="ri" type="button" id="setHow"><span>How to play</span><span class="chev">›</span></button>
+          <a class="ri" href="/rock-paper-scissors/" target="_blank" rel="noopener"><span>Rules &amp; strategy guide<small>Opens the full guide on the website</small></span><span class="chev">›</span></a>
           <button class="ri" type="button" id="setBug"><span>Report a bug</span><span class="chev">›</span></button>
           <a class="ri" id="setContact" href="#"><span>Contact us<small id="setContactSub">support@rps10.online</small></span><span class="chev">›</span></a>
         </div>
